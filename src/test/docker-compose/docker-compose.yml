@@ -1,0 +1,4 @@
+grouper:
+  build: ./grouper/
+  ports:
+   - "8080:8080"

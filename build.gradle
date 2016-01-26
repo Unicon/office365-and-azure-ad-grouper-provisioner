@@ -1,0 +1,117 @@
+apply plugin: 'java'
+apply plugin: 'distribution'
+
+repositories {
+    // Use 'jcenter' for resolving your dependencies.
+    jcenter()
+}
+
+dependencies {
+    compile ('edu.internet2.middleware.grouper:grouper:2.2.2') {
+      transitive = false
+    }
+    compile 'edu.internet2.middleware.grouper:subject:2.2.2'
+    compile 'org.slf4j:slf4j-api:1.6.2'
+    
+    //Needed for hooks to compile
+    compile 'org.hibernate:hibernate-core:3.6.0.Final'
+}
+
+distributions {    
+    main {
+        baseName = 'office-365-azure-ad-grouper-provisioner'
+        contents {
+            from { 'build/dist-tmp' }
+        }
+    }
+}
+
+version = '1.0.0'
+
+test.useTestNG()
+jar.dependsOn test
+
+task copyDocker(type: Copy) {
+    from 'src/test/docker-compose/'
+    into 'build/docker-compose/'
+}
+
+task addLib(type: Copy) {
+    dependsOn jar
+
+    from 'build/libs/'
+    into 'build/docker-compose/grouper/'
+}
+
+task buildContainers(type:Exec) {
+    dependsOn copyDocker, addLib
+
+    doFirst {
+        logger.lifecycle("Building the initial images may take a long time. Have plenty of bandwidth.")
+    }
+
+    workingDir 'build/docker-compose'
+    commandLine 'docker-compose', 'build'
+}
+
+task runContainers(type:Exec) {
+  dependsOn buildContainers
+
+  workingDir 'build/docker-compose'
+  commandLine 'docker-compose', 'up', '-d'
+}
+
+task stopContainers(type:Exec) {
+    workingDir 'build/docker-compose'
+    commandLine 'docker-compose', 'kill'
+}
+
+task removeContainers(type:Exec) {
+    dependsOn stopContainers
+
+    workingDir 'build/docker-compose'
+    commandLine 'docker-compose', 'rm', '-f'
+}
+
+task logs(type:Exec) {
+    workingDir 'build/docker-compose'
+    commandLine 'docker-compose', 'logs'
+}
+
+task autoIntTest(type: Test) {
+    dependsOn runContainers
+
+    outputs.upToDateWhen {false}
+    include '**/*IntegrationTest*'
+    finalizedBy removeContainers
+
+    doFirst {
+        logger.lifecycle("The test will take a few moments to start while we wait for Jetty/Tomcat to start up.")
+    }
+}
+
+task intTest(type: Test) {
+    dependsOn testClasses
+
+    outputs.upToDateWhen {false}
+    include '**/*IntegrationTest*'
+
+    doFirst {
+        logger.lifecycle("The test will take a few moments to start while we wait for Jetty/Tomcat to start up.")
+    }
+}
+
+
+task prepDist(type: Copy) {
+    from ('build/libs')
+    from ('LICENSE')
+    into 'build/dist-tmp/'
+}
+
+distTar.dependsOn prepDist
+distZip.dependsOn prepDist
+
+
+clean {
+    dependsOn removeContainers
+}
