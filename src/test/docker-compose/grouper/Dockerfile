@@ -8,5 +8,5 @@ RUN set -x; \
     && cd /opt/grouper.apiBinary-2.2.2/ \
     && bin/gsh /provisioningTargetAttributes.gsh
 
-COPY custom/ /opt/grouper.apiBinary-2.2.2/libs/custom/
+COPY custom/ /opt/grouper.apiBinary-2.2.2/lib/custom/
 COPY grouper-loader.properties /opt/grouper.apiBinary-2.2.2/conf/
