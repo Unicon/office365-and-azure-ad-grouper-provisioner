@@ -17,6 +17,9 @@ COPY grouper-loader.properties /opt/grouper.apiBinary-2.2.2/conf/
 COPY googleServiceAccount.p12 /opt/grouper.apiBinary-2.2.2/conf/
 COPY googleAppsFullSync /opt/grouper.apiBinary-2.2.2/bin/
 
+# Add google changlog consumer to logging
+COPY log4j.properties /opt/grouper.apiBinary-2.2.2/conf/
+
 # Setup up Google Apps provisioning targets
 # "googleAppsFullSync google --dry-run" creates etc:attribute:googleProvisioner folder and syncToGoogle<consumerName> attributes
 # "gsh /provisioningTargetAttributes.gsh" applies "syncToGooglegoogle" marker attribute to "affiliations:staff"
