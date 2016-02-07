@@ -11,3 +11,4 @@ RUN set -x; \
 COPY custom/ /opt/grouper.apiBinary-2.2.2/lib/custom/
 COPY grouper-loader.properties /opt/grouper.apiBinary-2.2.2/conf/
 COPY googleServiceAccount.p12 /opt/grouper.apiBinary-2.2.2/conf/
+COPY googleAppsFullSync /opt/grouper.apiBinary-2.2.2/bin/
