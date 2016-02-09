@@ -22,7 +22,7 @@ COPY log4j.properties /opt/grouper.apiBinary-2.2.2/conf/
 
 # Setup up Google Apps provisioning targets
 # "googleAppsFullSync google --dry-run" creates etc:attribute:googleProvisioner folder and syncToGoogle<consumerName> attributes
-# "gsh /provisioningTargetAttributes.gsh" applies "syncToGooglegoogle" marker attribute to "affiliations:staff"
+# "gsh /provisioningTargetAttributes.gsh" marks groups for google provisioning
 ADD provisioningTargetAttributes.gsh /
 RUN set -x; \
     service mysql start \
