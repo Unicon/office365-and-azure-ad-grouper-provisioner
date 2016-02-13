@@ -2,7 +2,7 @@
 gs = GrouperSession.startRootSession();
 
 // Get the Google Sync Marker Attribute for changelog.consumer.google.*
-googleSyncAttr = AttributeDefNameFinder.findByName("etc:attribute:googleProvisioner:syncToGooglegoogle", true);
+// googleSyncAttr = AttributeDefNameFinder.findByName("etc:attribute:googleProvisioner:syncToGooglegoogle", true);
 
 // For more extensive testing, load groups with more members...
 // prime affiliation groups
@@ -20,5 +20,5 @@ addMember("test:test-group", "bsmith")
 addMember("test:test-group", "bthompson")
 addMember("test:test-group", "dgasper")
 // Add the marker to test-group
-testGroup.getAttributeDelegate().addAttribute(googleSyncAttr);
+// testGroup.getAttributeDelegate().addAttribute(googleSyncAttr);
 

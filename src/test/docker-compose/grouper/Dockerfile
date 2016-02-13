@@ -18,11 +18,11 @@ COPY grouper-loader.properties /opt/grouper.apiBinary-2.2.2/conf/
 COPY googleServiceAccount.p12 /opt/grouper.apiBinary-2.2.2/conf/
 COPY googleAppsFullSync /opt/grouper.apiBinary-2.2.2/bin/
 
-# Install Office365 Provisioner
-COPY office365-and-azure-ad-grouper-provisioner-1.0.0.jar /opt/grouper.apiBinary-2.2.2/lib/custom/
-
 # Add google changlog consumer to logging
 COPY log4j.properties /opt/grouper.apiBinary-2.2.2/conf/
+
+# Install Office365 Provisioner
+COPY office365-and-azure-ad-grouper-provisioner-1.0.0.jar /opt/grouper.apiBinary-2.2.2/lib/custom/
 
 # Set java opts for remote debug of gsh -loader
 COPY setenv.sh /opt/grouper.apiBinary-2.2.2/bin/
