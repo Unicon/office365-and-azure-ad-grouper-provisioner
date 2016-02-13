@@ -24,6 +24,9 @@ COPY office365-and-azure-ad-grouper-provisioner-1.0.0.jar /opt/grouper.apiBinary
 # Add google changlog consumer to logging
 COPY log4j.properties /opt/grouper.apiBinary-2.2.2/conf/
 
+# Set java opts for remote debug of gsh -loader
+COPY setenv.sh /opt/grouper.apiBinary-2.2.2/bin/
+
 # Setup up Google Apps provisioning targets
 # "googleAppsFullSync google --dry-run" creates etc:attribute:googleProvisioner folder and syncToGoogle<consumerName> attributes
 # "gsh /provisioningTargetAttributes.gsh" marks groups for google provisioning
