@@ -26,13 +26,14 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     /** Maps supported changeLogEntry category and action to methods */
     enum ChangeLogEventType {
         group_addGroup {
-            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl changeLogConsumerBaseImpl) {
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 // does this event pertain to us? was the group or one of its parent folders marked for sync
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_ADD.name);
-                if (changeLogConsumerBaseImpl.groupMarkedForSync(groupName)) {
-                    changeLogConsumerBaseImpl.addGroupInternal(changeLogEntry);
+                if (consumer.isGroupMarkedForSync(groupName)) {
+                    consumer.addGroupInternal(changeLogEntry);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
+                    LOG.debug("changeLog.consumer.{}: skipping group_addGroup since {} is not marked for sync", consumer.consumerName, groupName);
                 }
             }
         };
@@ -46,27 +47,31 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     }
 
     // If syncAttribute was applied to group or one of the parent folders return true
-    private boolean groupMarkedForSync(String groupName) {
+    private boolean isGroupMarkedForSync(String groupName) {
         try {
             Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, true);
-            boolean groupMarkedForSync = group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
-            return groupMarkedForSync || shouldSyncFolder(group.getParentStem());
+            boolean groupMarkedForSync = !group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
+            return groupMarkedForSync || isFolderMarkedForSync(group.getParentStem());
 
         } catch (GroupNotFoundException gnfe) {
             // Group gone missing before we had a chance to sync?
-            LOG.debug("changeLog.consumer.'{}': grouper group {} removed before we had a chance to sync", consumerName, groupName);
+            LOG.debug("changeLog.consumer.{}: grouper group {} removed before we had a chance to sync", consumerName, groupName);
             return false;
         }
     }
 
     // If syncAttribute applied to folder or any parent folder(s) return true
-    private boolean shouldSyncFolder(Stem folder) {
-        boolean folderMarkedForSync = folder.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
-        return folderMarkedForSync || shouldSyncFolder(folder.getParentStem());
+    private boolean isFolderMarkedForSync(Stem folder) {
+
+        // sync attribute on Root folder is not supported
+        if (folder.isRootStem()) return false;
+
+        boolean folderMarkedForSync = !folder.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
+        return folderMarkedForSync || isFolderMarkedForSync(folder.getParentStem());
     }
 
 
-    private String consumerName;
+    protected String consumerName;
 
     /** Name of marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     private String syncAttributeName;
@@ -78,20 +83,12 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     /** Property name for marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     public static String SYNC_ATTRIBUTE_NAME = "syncAttributeName";
 
-
-
-
     /**
      *
      * @param changeLogEntry
      */
     private void addGroupInternal(ChangeLogEntry changeLogEntry) {
-        LOG.debug("changeLog.consumer.'{}': processing group add for {}.", consumerName, changeLogEntry.toStringDeep());
-        try {
             addGroup(changeLogEntry);
-        } catch(Exception e) {
-            LOG.error("changeLog.consumer.'{}': error processing group add for {}");
-        }
     }
 
     /**
@@ -213,7 +210,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 changeLogProcessorMetadata.setHadProblem(true);
                 changeLogProcessorMetadata.setRecordException(e);
                 changeLogProcessorMetadata.setRecordExceptionSequence(changeLogEntrySequenceNumber);
-                // TODO then break on retryOnError = false? or just keep processing and let full sync clean it up?
+                // TODO then break on retryOnError = true? or just keep processing and let full sync clean it up?
             }
 
         }
@@ -248,7 +245,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
             changeLogEventType.process(changeLogEntry, this);
             LOG.info("changeLog.consumer.{}: end processing {} for {}", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.toStringDeep()});
         } catch (IllegalArgumentException e) {
-            LOG.debug("changeLog.consumer.{}: unsupported {} for {}", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.toStringDeep()});
+            LOG.debug("changeLog.consumer.{}: unsupported {}", new Object[]{consumerName, changeLogEventTypeKey});
         }
     }
 
