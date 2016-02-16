@@ -30,10 +30,54 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 // does this event pertain to us? was the group or one of its parent folders marked for sync
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_ADD.name);
                 if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.addGroupInternal(changeLogEntry);
+                    consumer.addGroup(changeLogEntry, consumer.consumerName);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("changeLog.consumer.{}: skipping group_addGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    LOG.debug("{} skipping addGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                }
+            }
+        },
+        group_updateGroup {
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+                final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.name);
+                if (consumer.isGroupMarkedForSync(groupName)) {
+                    consumer.updateGroup(changeLogEntry, consumer.consumerName);
+                } else {
+                    // skipping changeLogEntry that doesn't pertain to us
+                    LOG.debug("{} skipping updateGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                }
+            }
+        },
+        group_deleteGroup {
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+                final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_DELETE.name);
+                if (consumer.isGroupMarkedForSync(groupName)) {
+                    consumer.deleteGroup(changeLogEntry, consumer.consumerName);
+                } else {
+                    // skipping changeLogEntry that doesn't pertain to us
+                    LOG.debug("{}: skipping deleteGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                }
+            }
+        },
+        membership_addMembership {
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+                final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_ADD.groupName);
+                if (consumer.isGroupMarkedForSync(groupName)) {
+                    consumer.addMembership(changeLogEntry, consumer.consumerName);
+                } else {
+                    // skipping changeLogEntry that doesn't pertain to us
+                    LOG.debug("{}: skipping addMembership since {} is not marked for sync", consumer.consumerName, groupName);
+                }
+            }
+        },
+        membership_deleteMembership {
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+                final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_DELETE.groupName);
+                if (consumer.isGroupMarkedForSync(groupName)) {
+                    consumer.deleteMembership(changeLogEntry, consumer.consumerName);
+                } else {
+                    // skipping changeLogEntry that doesn't pertain to us
+                    LOG.debug("{}: skipping deleteMembership since {} is not marked for sync", consumer.consumerName, groupName);
                 }
             }
         };
@@ -46,6 +90,31 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         public abstract void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl changeLogConsumerBaseImpl);
     }
 
+
+    /**
+     * These methods are expected to be overriden in a subclass that is specific to a provisioning target. (e.g. Google Apps)
+     */
+    protected void addGroup(ChangeLogEntry changeLogEntry, String consumerName) {
+        LOG.debug("{}: addGroup dispatched but not implemented in subclass.", consumerName);
+    }
+
+    protected void updateGroup(ChangeLogEntry changeLogEntry, String consumerName) {
+        LOG.debug("{}: updateGroup dispatched but not implemented in subclass.", consumerName);
+    }
+
+    protected void deleteGroup(ChangeLogEntry changeLogEntry, String consumerName) {
+        LOG.debug("{}: deleteGroup dispatched but not implemented in subclass.", consumerName);
+    }
+
+    protected void addMembership(ChangeLogEntry changeLogEntry, String consumerName) {
+        LOG.debug("{}: addMembership dispatched but not implemented in subclass.", consumerName);
+    }
+
+    protected void deleteMembership(ChangeLogEntry changeLogEntry, String consumerName) {
+        LOG.debug("{} dispatched deleteMembership, but not implemented in subclass.", consumerName);
+    }
+
+
     // If syncAttribute was applied to group or one of the parent folders return true
     private boolean isGroupMarkedForSync(String groupName) {
         try {
@@ -55,7 +124,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
         } catch (GroupNotFoundException gnfe) {
             // Group gone missing before we had a chance to sync?
-            LOG.debug("changeLog.consumer.{}: grouper group {} removed before we had a chance to sync", consumerName, groupName);
+            LOG.debug("{} group {} not found in grouper db before we had a chance to sync to target.", consumerName, groupName);
             return false;
         }
     }
@@ -71,7 +140,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     }
 
 
-    protected String consumerName;
+    private String consumerName;
 
     /** Name of marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     private String syncAttributeName;
@@ -83,21 +152,9 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     /** Property name for marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     public static String SYNC_ATTRIBUTE_NAME = "syncAttributeName";
 
-    /**
-     *
-     * @param changeLogEntry
-     */
-    private void addGroupInternal(ChangeLogEntry changeLogEntry) {
-            addGroup(changeLogEntry);
-    }
 
-    /**
-     * expected to be overidden
-     * @param changeLogEntry
-     */
-    protected void addGroup(ChangeLogEntry changeLogEntry) {
-        LOG.error("ChangeLogConsumerBaseImpl expects to subclassed.");
-    }
+
+
 
     /**
      * expected to be overidden
@@ -108,25 +165,9 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         return false;
     }
 
-
-    /**
-     * Refreshes consumer configuration from grouper-loader.properties each time the consumer is run
-     *
-     * @param consumerName
-     */
-    private void initProperties(String consumerName) {
-        final String consumerConfigPrefix = "changeLog.consumer." + consumerName + ".";
-
-        GrouperLoaderConfig config = GrouperLoaderConfig.retrieveConfig();
-
-        LOG.debug("changeLog.consumer.{}: setting properties...", consumerName);
-
-        syncAttributeName = config.propertyValueStringRequired(consumerConfigPrefix + SYNC_ATTRIBUTE_NAME);
-
-    }
-
     /**
      * Process the list of changeLogEntries since the last time this consumer was run.
+     * This method will be called by grouper daemon (aka grouper loader).
      *
      * @param changeLogEntryList
      * @param changeLogProcessorMetadata
@@ -138,11 +179,12 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         // Name of the consumer configured in grouper-loader.properties that extends this class
         // e.g. changeLog.consumer.<consumerName>.class = edu.example.changeLogConsumer
         if (consumerName == null) {
-            consumerName = changeLogProcessorMetadata.getConsumerName();
+            consumerName = "changeLog.consumer." + changeLogProcessorMetadata.getConsumerName();
         }
 
-        // Get config for the consumer from changeLog.consumer.<consumerName>.*
-        initProperties(consumerName);
+
+        GrouperLoaderConfig config = GrouperLoaderConfig.retrieveConfig();
+        syncAttributeName = config.propertyValueStringRequired(consumerName + "." + SYNC_ATTRIBUTE_NAME);
 
         // syncAttribute name configured in grouper-loader.properties
         // e.g. changeLog.consumer.<consumerName>.<syncAttributeName> = o365
@@ -159,7 +201,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 // next check for attribute definition etc:attribute:changeLogConsumer:<syncAttributeName>AttributeDef, and create if missing
                 AttributeDef syncAttrDef = AttributeDefFinder.findByName(syncAttributeName + "Def", false);
                 if (syncAttrDef == null) {
-                    LOG.info("changeLog.consumer.{}: - attribute definition not found for {}, creating it now", consumerName, syncAttributeName + "Def");
+                    LOG.info("{} attribute definition {} not found, creating it now.", consumerName, syncAttributeName + "Def");
                     syncAttrDef = configFolder.addChildAttributeDef(syncAttributeName + "Def", AttributeDefType.attr);
                     syncAttrDef.setAssignToGroup(true);
                     syncAttrDef.setAssignToStem(true);
@@ -169,17 +211,18 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
                 // finally create the attribute etc:attribute:changeLogConsumer:<syncAttributeName>. This is the marker attribute for the consumer.
                 syncAttribute = configFolder.addChildAttributeDefName(syncAttrDef, syncAttributeName, syncAttributeName);
-                LOG.info("changeLog.consumer.{}:  attribute name created for {}", consumerName, syncAttributeName);
+                LOG.info("{} created attribute name {}.", consumerName, syncAttributeName);
             }
         }
 
         // change log sequence to return. will be updated in grouper db to keep track of processing progress.
         long changeLogEntrySequenceNumber = -1;
 
-        // ContextId groups multiple changeLogEntries into a logical change set
-        // tracking for performance purposes. is this really needed?
+        // ContextId groups multiple changeLogEntries into a logical change set.
+        // Tracking this for performance purposes. is this really needed?
         String currentChangeLogEntryContextId = null;
 
+        LOG.debug("{} ** starting processing run at change log entry {} ** ", consumerName, changeLogEntryList.get(0).getSequenceNumber());
         for (ChangeLogEntry changeLogEntry : changeLogEntryList) {
 
             // TODO bail out as soon as we can determine this change doesn't apply to us
@@ -204,7 +247,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 // process the changeLogEntry
                 processChangeLogEntry(changeLogEntry);
             } catch (Exception e){
-                String message = "changeLog.consumer." + consumerName + ": an error occurred processing sequence number " + changeLogEntrySequenceNumber;
+                String message = consumerName + " threw an exception processing change log entry sequence number " + changeLogEntrySequenceNumber + ".";
                 LOG.error(message, e);
                 changeLogProcessorMetadata.registerProblem(e, message, changeLogEntrySequenceNumber);
                 changeLogProcessorMetadata.setHadProblem(true);
@@ -215,11 +258,12 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
         }
 
+        // TODO how would we get here?
         if (changeLogEntrySequenceNumber == -1) {
-            throw new RuntimeException("changeLog.consumer." + consumerName + ": unable to process any records");
+            throw new RuntimeException(consumerName + "was unable to dispatch any records.");
         }
 
-        LOG.debug("changeLog.consumer.{}: finished processing changeLogEntryList. Last sequence number processed was {}", consumerName, changeLogEntrySequenceNumber);
+        LOG.info("{} ** finished processing run at change log entry {} **", consumerName, changeLogEntrySequenceNumber);
 
         // the last changeLogEntrySequence processed
         return changeLogEntrySequenceNumber;
@@ -241,11 +285,10 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         // look up method to map to call it
         try {
             changeLogEventType = ChangeLogEventType.valueOf(changeLogEventTypeKey);
-            LOG.info("changeLog.consumer.{}: start processing {} for {}", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.toStringDeep()});
+            LOG.debug("{} dispatching change log event type {} for change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
             changeLogEventType.process(changeLogEntry, this);
-            LOG.info("changeLog.consumer.{}: end processing {} for {}", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.toStringDeep()});
         } catch (IllegalArgumentException e) {
-            LOG.debug("changeLog.consumer.{}: unsupported {}", new Object[]{consumerName, changeLogEventTypeKey});
+            LOG.debug("{} encountered unsupported change log event type, {}, when attempting to dispatch change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
         }
     }
 
