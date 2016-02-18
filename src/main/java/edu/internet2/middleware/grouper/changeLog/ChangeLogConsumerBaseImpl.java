@@ -11,17 +11,30 @@ import edu.internet2.middleware.grouper.changeLog.ChangeLogConsumerBase;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogEntry;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogProcessorMetadata;
 import edu.internet2.middleware.grouper.exception.GroupNotFoundException;
+import edu.internet2.middleware.grouper.pit.PITGroup;
+import edu.internet2.middleware.grouper.pit.finder.PITGroupFinder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Default @ChangeLogConsumerBase implementation.
+ * Default @ChangeLogConsumerBase implementation. This class gets instantiated by grouper
+ * for every run of processChangeLogEntries().
  */
 public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
     private static final Logger LOG = LoggerFactory.getLogger(ChangeLogConsumerBaseImpl.class);
+
+    /**
+     * Cache of previously seen grouper folders and groups names and if they are marked for provisioning.
+     * folder or group name, marked or not marked
+     **/
+    private HashMap<String, String> markedFoldersAndGroups = new HashMap<String, String>(256);
+    private static final String MARKED = "marked";
+    private static final String NOT_MARKED = "not marked";
 
     /** Maps supported changeLogEntry category and action to methods */
     enum ChangeLogEventType {
@@ -51,11 +64,11 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         group_deleteGroup {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_DELETE.name);
-                if (consumer.isGroupMarkedForSync(groupName)) {
+                if (consumer.isDeletedGroupMarkedForSync(groupName)) {
                     consumer.deleteGroup(changeLogEntry, consumer.consumerName);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{}: skipping deleteGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    LOG.debug("{} skipping deleteGroup since {} is not marked for sync", consumer.consumerName, groupName);
                 }
             }
         },
@@ -66,7 +79,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                     consumer.addMembership(changeLogEntry, consumer.consumerName);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{}: skipping addMembership since {} is not marked for sync", consumer.consumerName, groupName);
+                    LOG.debug("{} skipping addMembership since {} is not marked for sync", consumer.consumerName, groupName);
                 }
             }
         },
@@ -77,7 +90,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                     consumer.deleteMembership(changeLogEntry, consumer.consumerName);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{}: skipping deleteMembership since {} is not marked for sync", consumer.consumerName, groupName);
+                    LOG.debug("{} skipping deleteMembership since {} is not marked for sync", consumer.consumerName, groupName);
                 }
             }
         };
@@ -95,19 +108,19 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
      * These methods are expected to be overriden in a subclass that is specific to a provisioning target. (e.g. Google Apps)
      */
     protected void addGroup(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{}: addGroup dispatched but not implemented in subclass.", consumerName);
+        LOG.debug("{} addGroup dispatched but not implemented in subclass.", consumerName);
     }
 
     protected void updateGroup(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{}: updateGroup dispatched but not implemented in subclass.", consumerName);
+        LOG.debug("{} updateGroup dispatched but not implemented in subclass.", consumerName);
     }
 
     protected void deleteGroup(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{}: deleteGroup dispatched but not implemented in subclass.", consumerName);
+        LOG.debug("{} deleteGroup dispatched but not implemented in subclass.", consumerName);
     }
 
     protected void addMembership(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{}: addMembership dispatched but not implemented in subclass.", consumerName);
+        LOG.debug("{} addMembership dispatched but not implemented in subclass.", consumerName);
     }
 
     protected void deleteMembership(ChangeLogEntry changeLogEntry, String consumerName) {
@@ -117,27 +130,67 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
     // If syncAttribute was applied to group or one of the parent folders return true
     private boolean isGroupMarkedForSync(String groupName) {
-        try {
-            Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, true);
-            boolean groupMarkedForSync = !group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
-            return groupMarkedForSync || isFolderMarkedForSync(group.getParentStem());
 
-        } catch (GroupNotFoundException gnfe) {
-            // Group gone missing before we had a chance to sync?
-            LOG.debug("{} group {} not found in grouper db before we had a chance to sync to target.", consumerName, groupName);
+        // have we seen this group already in this run
+        if (markedFoldersAndGroups.containsKey(groupName)) {
+            return markedFoldersAndGroups.get(groupName).equals(MARKED);
+        }
+
+        boolean markedForSync;
+
+        // look for group
+        final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+        if (group != null) {
+            markedForSync = !group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty() || isFolderMarkedForSync(group.getParentStem());
+        } else {
+            // look for deleted group in PIT
+            markedForSync = isDeletedGroupMarkedForSync(groupName);
+        }
+
+        // remember this for next time
+        if(markedForSync) {
+            markedFoldersAndGroups.put(groupName, MARKED);
+            return true;
+        } else {
+            markedFoldersAndGroups.put(groupName, NOT_MARKED);
             return false;
         }
     }
 
     // If syncAttribute applied to folder or any parent folder(s) return true
     private boolean isFolderMarkedForSync(Stem folder) {
-
         // sync attribute on Root folder is not supported
         if (folder.isRootStem()) return false;
 
-        boolean folderMarkedForSync = !folder.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
-        return folderMarkedForSync || isFolderMarkedForSync(folder.getParentStem());
+        final String folderName = folder.getName();
+
+        // have we seen this folder already in this run
+        if (markedFoldersAndGroups.containsKey(folderName)) {
+            return markedFoldersAndGroups.get(folderName).equals(MARKED);
+        }
+
+        boolean markedForSync = !folder.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty() || isFolderMarkedForSync(folder.getParentStem());
+
+        // remember this for next time
+        if(markedForSync) {
+            markedFoldersAndGroups.put(folderName, MARKED);
+            return true;
+        } else {
+            markedFoldersAndGroups.put(folderName, NOT_MARKED);
+            return false;
+        }
     }
+
+    // If syncAttribute was applied to group or one of the parent folders return true
+    private boolean isDeletedGroupMarkedForSync(String groupName) {
+        // TODO PITGroupFinder.findByName has a bug...doesn't honor boolean orderByStartTime always passed true
+        PITGroup group = PITGroupFinder.findMostRecentByName(groupName, true);
+        // TODO no PITAttributeAssignments?
+        // boolean groupMarkedForSync = !group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
+        // TODO return groupMarkedForSync || isFolderMarkedForSync(group.getParentStem());
+        return false;
+    }
+
 
 
     private String consumerName;
@@ -253,7 +306,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 changeLogProcessorMetadata.setHadProblem(true);
                 changeLogProcessorMetadata.setRecordException(e);
                 changeLogProcessorMetadata.setRecordExceptionSequence(changeLogEntrySequenceNumber);
-                // TODO then break on retryOnError = true? or just keep processing and let full sync clean it up?
+                // TODO then return previous seq number on retryOnError = true?
+                // or just log and keep processing and let full sync clean it up?
             }
 
         }
@@ -288,7 +342,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
             LOG.debug("{} dispatching change log event type {} for change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
             changeLogEventType.process(changeLogEntry, this);
         } catch (IllegalArgumentException e) {
-            LOG.debug("{} encountered unsupported change log event type, {}, when attempting to dispatch change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
+            LOG.debug("{} unsupported change log event type, {}, when attempting to dispatch change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
         }
     }
 
