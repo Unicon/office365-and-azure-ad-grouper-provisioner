@@ -37,6 +37,7 @@ public class PrintChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     protected void addMembership(ChangeLogEntry changeLogEntry, String consumerName){
         final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_ADD.groupName);
         final String subjectId = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_ADD.subjectId);
+        // Group is marked for sync, but does it exist already in target? if not create it.
         LOG.debug("{} add {} to group {}.", new Object[] {consumerName, subjectId, groupName});
     }
 
