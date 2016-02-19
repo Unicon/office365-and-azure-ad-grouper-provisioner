@@ -11,7 +11,11 @@ import edu.internet2.middleware.grouper.changeLog.ChangeLogConsumerBase;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogEntry;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogProcessorMetadata;
 import edu.internet2.middleware.grouper.exception.GroupNotFoundException;
+import edu.internet2.middleware.grouper.pit.PITAttributeAssign;
+import edu.internet2.middleware.grouper.pit.PITAttributeDefName;
 import edu.internet2.middleware.grouper.pit.PITGroup;
+import edu.internet2.middleware.grouper.pit.finder.PITAttributeAssignFinder;
+import edu.internet2.middleware.grouper.pit.finder.PITAttributeDefNameFinder;
 import edu.internet2.middleware.grouper.pit.finder.PITGroupFinder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,7 +68,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         group_deleteGroup {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_DELETE.name);
-                if (consumer.isDeletedGroupMarkedForSync(groupName)) {
+                if (consumer.isGroupMarkedForSync(groupName)) {
                     consumer.deleteGroup(changeLogEntry, consumer.consumerName);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
@@ -128,7 +132,11 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     }
 
 
-    // If syncAttribute was applied to group or one of the parent folders return true
+    /**
+     * If syncAttribute was applied to the group or one of the parent folders return true
+     * Method keeps an internal cache of results per run in markedFoldersAndGroups
+     * Will also check the PIT for recently deleted groups
+     */
     private boolean isGroupMarkedForSync(String groupName) {
 
         // have we seen this group already in this run
@@ -138,13 +146,26 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
         boolean markedForSync;
 
-        // look for group
+        // looking for the group
         final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+
         if (group != null) {
-            markedForSync = !group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty() || isFolderMarkedForSync(group.getParentStem());
+            // is it marked with the syncAttribute?
+            markedForSync = group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(syncAttribute.getName(), false);
         } else {
-            // look for deleted group in PIT
-            markedForSync = isDeletedGroupMarkedForSync(groupName);
+            // looking for the deleted group in the PIT
+            PITGroup pitGroup = PITGroupFinder.findMostRecentByName(groupName, true);
+            if (pitGroup != null) {
+                // looking for syncAttribute assignment in the PIT
+                Set<PITAttributeDefName> pitSyncAttributes = PITAttributeDefNameFinder.findByName(syncAttribute.getName(), false, true);
+                PITAttributeDefName pitSyncAttribute = pitSyncAttributes.iterator().next();
+                Set<PITAttributeAssign> pitAttributeAssigns = PITAttributeAssignFinder.findByOwnerPITGroupAndPITAttributeDefName(pitGroup, pitSyncAttribute, pitGroup.getStartTime(), pitGroup.getEndTime());
+                markedForSync = pitAttributeAssigns.isEmpty();
+            } else {
+                // couldn't find group anywhere including the PIT
+                LOG.debug("{} checking for {} marker, but could not find group {} anywhere, including the PIT.", new Object[]{consumerName, syncAttributeName, groupName});
+                markedForSync = false;
+            }
         }
 
         // remember this for next time
@@ -157,42 +178,6 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         }
     }
 
-    // If syncAttribute applied to folder or any parent folder(s) return true
-    private boolean isFolderMarkedForSync(Stem folder) {
-        // sync attribute on Root folder is not supported
-        if (folder.isRootStem()) return false;
-
-        final String folderName = folder.getName();
-
-        // have we seen this folder already in this run
-        if (markedFoldersAndGroups.containsKey(folderName)) {
-            return markedFoldersAndGroups.get(folderName).equals(MARKED);
-        }
-
-        boolean markedForSync = !folder.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty() || isFolderMarkedForSync(folder.getParentStem());
-
-        // remember this for next time
-        if(markedForSync) {
-            markedFoldersAndGroups.put(folderName, MARKED);
-            return true;
-        } else {
-            markedFoldersAndGroups.put(folderName, NOT_MARKED);
-            return false;
-        }
-    }
-
-    // If syncAttribute was applied to group or one of the parent folders return true
-    private boolean isDeletedGroupMarkedForSync(String groupName) {
-        // TODO PITGroupFinder.findByName has a bug...doesn't honor boolean orderByStartTime always passed true
-        PITGroup group = PITGroupFinder.findMostRecentByName(groupName, true);
-        // TODO no PITAttributeAssignments?
-        // boolean groupMarkedForSync = !group.getAttributeDelegate().retrieveAssignments(syncAttribute).isEmpty();
-        // TODO return groupMarkedForSync || isFolderMarkedForSync(group.getParentStem());
-        return false;
-    }
-
-
-
     private String consumerName;
 
     /** Name of marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
@@ -204,9 +189,6 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
     /** Property name for marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     public static String SYNC_ATTRIBUTE_NAME = "syncAttributeName";
-
-
-
 
 
     /**
@@ -339,10 +321,10 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         // look up method to map to call it
         try {
             changeLogEventType = ChangeLogEventType.valueOf(changeLogEventTypeKey);
-            LOG.debug("{} dispatching change log event type {} for change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
+            LOG.debug("{} dispatching change log event {} for change log {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
             changeLogEventType.process(changeLogEntry, this);
         } catch (IllegalArgumentException e) {
-            LOG.debug("{} unsupported change log event type, {}, when attempting to dispatch change log entry {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
+            LOG.debug("{} unsupported event {} in change log {}.", new Object[]{consumerName, changeLogEventTypeKey, changeLogEntry.getSequenceNumber()});
         }
     }
 
