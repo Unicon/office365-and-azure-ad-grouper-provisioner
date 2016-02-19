@@ -19,6 +19,9 @@ testGroup = addGroup("test", "test-group", "test-group")
 addMember("test:test-group", "bsmith")
 addMember("test:test-group", "bthompson")
 addMember("test:test-group", "dgasper")
-// Add the marker to test-group
-// testGroup.getAttributeDelegate().addAttribute(googleSyncAttr);
 
+// add sync mark to "test" folder, this has to run after consumer creates the syncAttribute
+gs = GrouperSession.startRootSession();
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+test = StemFinder.findByName(gs, "test", true);
+test.getAttributeDelegate().addAttribute(syncAttr);
