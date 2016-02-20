@@ -39,6 +39,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     private HashMap<String, String> markedFoldersAndGroups = new HashMap<String, String>(256);
     private static final String MARKED = "marked";
     private static final String NOT_MARKED = "not marked";
+    private static final String FOLDER = "stem";
+    private static final String GROUP = "group";
 
     /** Maps supported changeLogEntry category and action to methods */
     enum ChangeLogEventType {
@@ -69,7 +71,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_DELETE.name);
                 if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.deleteGroup(changeLogEntry, consumer.consumerName);
+                    // case when marker is on parent folder of deleted group
+                    consumer.deleteGroup(groupName, changeLogEntry, consumer.consumerName);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
                     LOG.debug("{} skipping deleteGroup since {} is not marked for sync", consumer.consumerName, groupName);
@@ -97,6 +100,94 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                     LOG.debug("{} skipping deleteMembership since {} is not marked for sync", consumer.consumerName, groupName);
                 }
             }
+        },
+        attributeAssign_addAttributeAssign {
+            // on assignment of syncAttribute marker, create all the groups or group (if directly assigned), and add any memberships
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+                // is this our syncAttribute?
+                final String attributeDefNameName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_ADD.attributeDefNameName);
+                if (consumer.syncAttribute.getName().equals(attributeDefNameName)) {
+                    // is it for a group? then create the group at the target
+                    String assignType = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_ADD.assignType);
+                    String ownerId1 = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_ADD.ownerId1);
+                    if (GROUP.equals(assignType)){
+                        Group markedGroup = GroupFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false );
+                        if (markedGroup != null) {
+                            consumer.createGroupAndMemberships(markedGroup, changeLogEntry, consumer.consumerName);
+                        } // couldn't find group, already deleted?
+                    } else if (FOLDER.equals(assignType)){
+                        Stem markedFolder = StemFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false);
+                        if (markedFolder != null) {
+                            // get all the groups below this folder and sub folders and create them at the target
+                            Set<Group> markedGroups = markedFolder.getChildGroups(Stem.Scope.SUB);
+                            for( Group group : markedGroups) {
+                                consumer.createGroupAndMemberships(group, changeLogEntry, consumer.consumerName);
+                            }
+                        } // couldn't find folder, already deleted?
+                    }
+                }
+            }
+        },
+        attributeAssign_deleteAttributeAssign {
+            /**
+             * On the removal of the syncAttribute marker, delete all the groups or group (if directly assigned) at the target, unless
+             * otherwise still marked by direct assignment or a parent folder.
+             */
+            public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+                // is this our syncAttribute? otherwise nothing to do.
+                final String attributeDefNameName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_DELETE.attributeDefNameName);
+                if (consumer.syncAttribute.getName().equals(attributeDefNameName)) {
+                    String assignType = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_DELETE.assignType);
+                    String ownerId1 = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_DELETE.ownerId1);
+                    // is it for a group? then delete the group at the target, unless a parent folder is also marked.
+                    if (GROUP.equals(assignType)) {
+                        // get the group and then check for a marked parent folder before deleting at target.
+                        Group group = GroupFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false);
+                        if (group != null){
+                            // case when group had a direct syncAttribute marker assignment removed, does it still have a parent marker?
+                            if (group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(consumer.syncAttribute.getName(), false)) {
+                                LOG.debug("{} processed deleteAttributeAssign for group {}, but still marked by a parent folder.", consumer.consumerName, group.getName());
+                            } else {
+                                // marker syncAttribute removed from group and no other parent folder marked so delete at target
+                                LOG.debug("{} processed deleteAttributeAssign for group {}, no other mark found so calling deleteGroup()", consumer.consumerName, group.getName());
+                                consumer.deleteGroup(group.getName(), changeLogEntry, consumer.consumerName);
+                            }
+                        } else {
+                            // case when a group which had a direct syncAttribute marker was deleted, always delete at target
+                            PITGroup pitGroup = PITGroupFinder.findBySourceId(ownerId1, false).iterator().next();
+                            if (pitGroup != null) {
+                                String pitGroupName = pitGroup.getName();
+                                // marker syncAttribute removed when deleting a group, always delete at target
+                                LOG.debug("{} processed deleteAttributeAssign for deleted group {}, calling deleteGroup()", consumer.consumerName, pitGroupName);
+                                consumer.deleteGroup(pitGroupName, changeLogEntry, consumer.consumerName);
+                            } else {
+                                // couldn't find group anywhere? so can't determine its name.
+                                LOG.error("{} failed to find group when processing deleteAttributeAssign so can't determine the group name, let fullSync sort it out.", consumer.consumerName);
+                            }
+                        }
+                    } else if (FOLDER.equals(assignType)) {
+                        // is it a folder, then delete all the containing groups at the target, unless they are still marked otherwise (direct or indirect)
+                        Stem unMarkedFolder = StemFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false);
+                        if (unMarkedFolder != null) {
+                            // get all the groups below this folder and sub folders and to see if they are still marked, otherwise delete them at the target
+                            Set<Group> unMarkedGroups = unMarkedFolder.getChildGroups(Stem.Scope.SUB);
+                            for (Group group : unMarkedGroups) {
+                                // check that the group isn't marked directly or from some other parent folder
+                                if (!consumer.isGroupMarkedForSync(group.getName())) {
+                                    LOG.debug("{} processed deleteAttributeAssign for folder {}, no other mark found for {} so calling deleteGroup({})", new Object[]{consumer.consumerName, unMarkedFolder.getName(), group.getName(), group.getName()});
+                                    consumer.deleteGroup(group.getName(), changeLogEntry, consumer.consumerName);
+                                } else {
+                                    LOG.debug("{} processed deleteAttributeAssign for folder {}, found mark for group {} so nothing to do.", new Object[]{consumer.consumerName, unMarkedFolder.getName(), group.getName()});
+                                }
+                            }
+                        } else {
+                            // couldn't find folder, already deleted? let fullSync sort it out.
+                            // shouldn't get here...can't delete a folder without first deleting child objects, so there should be nothing to delete at the target
+                            LOG.error("{} error processing deleteAttributeAssign for folder {}, let fullSync sort it out.", consumer.consumerName, unMarkedFolder.getName());
+                        }
+                    }
+                }
+            }
         };
 
         /**
@@ -119,7 +210,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         LOG.debug("{} updateGroup dispatched but not implemented in subclass.", consumerName);
     }
 
-    protected void deleteGroup(ChangeLogEntry changeLogEntry, String consumerName) {
+    protected void deleteGroup(String groupName, ChangeLogEntry changeLogEntry, String consumerName) {
         LOG.debug("{} deleteGroup dispatched but not implemented in subclass.", consumerName);
     }
 
@@ -129,6 +220,10 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
     protected void deleteMembership(ChangeLogEntry changeLogEntry, String consumerName) {
         LOG.debug("{} dispatched deleteMembership, but not implemented in subclass.", consumerName);
+    }
+
+    protected void createGroupAndMemberships(Group group, ChangeLogEntry changeLogEntry, String consumerName){
+        LOG.debug("{} dispatched createGroupAndMemberships for {}, but method not implemented in subclass.", consumerName, group);
     }
 
 
@@ -154,7 +249,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
             markedForSync = group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(syncAttribute.getName(), false);
         } else {
             // looking for the deleted group in the PIT
-            PITGroup pitGroup = PITGroupFinder.findMostRecentByName(groupName, true);
+            PITGroup pitGroup = PITGroupFinder.findMostRecentByName(groupName, false);
             if (pitGroup != null) {
                 // looking for syncAttribute assignment in the PIT
                 Set<PITAttributeDefName> pitSyncAttributes = PITAttributeDefNameFinder.findByName(syncAttribute.getName(), false, true);
