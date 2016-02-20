@@ -1,5 +1,6 @@
 package edu.internet2.middleware.grouper.changeLog.consumer;
 
+import edu.internet2.middleware.grouper.Group;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogConsumerBaseImpl;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogEntry;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogLabels;
@@ -28,9 +29,9 @@ public class PrintChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     }
 
     @Override
-    protected void deleteGroup(ChangeLogEntry changeLogEntry, String consumerName){
-        final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_DELETE.name);
-        LOG.debug("{} delete group {}.", consumerName, groupName);
+    protected void deleteGroup(String groupName, ChangeLogEntry changeLogEntry, String consumerName){
+        // changeLogEntry type could be attribute_assignDelete or group_delete
+        LOG.debug("{} delete group {} per change log entry {}.", new Object[] {consumerName, groupName, changeLogEntry.getSequenceNumber()});
     }
 
     @Override
