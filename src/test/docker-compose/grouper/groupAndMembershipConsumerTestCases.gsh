@@ -5,38 +5,114 @@ Test 1.0.1: Marking a parent folder
 2) place syncAttribute marker on parent folder
 Outcome:
 1) all groups within folder structure added to the target
-gsh:
+GSH:
+// Test 1.0.1 Marking a parent folder
 gs = GrouperSession.startRootSession();
-testParentFolderName = "test_1_0_1";
-groupName = testParentFolderName + ":group1";
-group1 = new GroupSave(gs).assignName(groupName).assignGroupNameToEdit(groupName).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
-group1.addMember("
+bob = "banderson";
+ann = "agasper";
+bill = "bbrown705";
+testFolderName = "test_1_0_1"
 
-groupName = testParentFolderName + ":subfolder:group2";
-group2 = new GroupSave(gs).assignName(groupName).assignGroupNameToEdit(groupName).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+// add group1 and membership to parent folder
+parentFolderName = testFolderName + ":parentFolder";
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group1Name, bob);
+addMember(group1Name, ann);
+addMember(group1Name, bill);
+
+// add group2 and membership to subfolder
+subFolderName = parentFolderName + ":subFolder"
+group2Name = subFolderName + ":group2";
+group2 = new GroupSave(gs).assignName(group2Name).assignGroupNameToEdit(group2Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group2Name, bob);
+addMember(group2Name, ann);
+addMember(group2Name, bill);
+
+// wait for grouper_debug.log:
+//      changeLog.consumer.print skipping addMembership for subject Bill Brown since group test_1_0_1:parentFolder:subFolder:group2 is not marked for sync
+//
+
+// add syncAttribute mark to parent folder
 syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
-testParentFolder = StemFinder.findByName(gs, testParentFolderName, true);
-test.getAttributeDelegate().addAttribute(syncAttr);
+parentFolder = StemFinder.findByName(gs, parentFolderName, true);
+parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
+// wait for grouper_debug.log:
+//      changeLog.consumer.print add group test_1_0_1:parentFolder:group1 and memberships
+//      changeLog.consumer.print add group test_1_0_1:parentFolder:subFolder:group2 and memberships
+// end of Test 1.0.1 Marking a parent folder
 
-
-
-folder1 = new edu.internet2.middleware.grouper.StemSave(gs).assignName("folder1").assignCreateParentStemsIfNotExist(true).save();
-folder1 = StemSave(gs).assignName("folder1").assignCreateParentStemsIfNotExist(true).save();
-
-addMember("stem1:admins", "test.subject.0");
-
-subjectActAs = SubjectFinder.findByIdAndSource("GrouperSystem", "g:isa", true);
-
+// Test 1.0.1 teardown
+delGroup(group2Name);
+delStem(subFolderName);
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 1.0.1 teardown
 
 
 Grouper action: 1.1 Remove a marker from a folder
 Target outcome: remove groups under that folder and any subfolder (and implicitly all the memberships), unless otherwise marked from a parent folder or has a direct assignment
-Test 1.1.1: Marked folder with subfolders and groups
+Test 1.1.1: Removing mark from parent folder with subfolders and groups (and no other marks)
 1) Test 1.0.1
 2) Remove syncAttribute marker from parent folder
 Outcome:
 1) all groups within folder structure removed from target
+GSH:
+// Test 1.1.1 Removing mark from parent folder with subfolders and groups (and no other marks)
+gs = GrouperSession.startRootSession();
+bob = "banderson";
+ann = "agasper";
+bill = "bbrown705";
+testFolderName = "test_1_0_1"
+
+// add group1 and membership to parent folder
+parentFolderName = testFolderName + ":parentFolder";
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group1Name, bob);
+addMember(group1Name, ann);
+addMember(group1Name, bill);
+
+// add group2 and membership to subfolder
+subFolderName = parentFolderName + ":subFolder"
+group2Name = subFolderName + ":group2";
+group2 = new GroupSave(gs).assignName(group2Name).assignGroupNameToEdit(group2Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group2Name, bob);
+addMember(group2Name, ann);
+addMember(group2Name, bill);
+
+// add syncAttribute mark to parent folder
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+parentFolder = StemFinder.findByName(gs, parentFolderName, true);
+parentFolder.getAttributeDelegate().addAttribute(syncAttr);
+
+// wait for grouper_debug.log:
+//      changeLog.consumer.print add group test_1_0_1:parentFolder:group1 and memberships
+//      changeLog.consumer.print add group test_1_0_1:parentFolder:subFolder:group2 and memberships
+
+// remove syncAttribute mark
+parentFolder.getAttributeDelegate().removeAttribute(syncAttr);
+
+// wait for group_debug.log:
+
+
+
+// end of Test 1.0.1 Marking a parent folder
+
+// Test 1.0.1 teardown
+delGroup(group2Name);
+delStem(subFolderName);
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 1.0.1 teardown
+
+
+
+
+
 
 
 Test 1.1.2: Marked folder with marked subfolders
