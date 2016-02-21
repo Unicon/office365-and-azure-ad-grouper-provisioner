@@ -17,6 +17,7 @@ import edu.internet2.middleware.grouper.pit.PITGroup;
 import edu.internet2.middleware.grouper.pit.finder.PITAttributeAssignFinder;
 import edu.internet2.middleware.grouper.pit.finder.PITAttributeDefNameFinder;
 import edu.internet2.middleware.grouper.pit.finder.PITGroupFinder;
+import edu.internet2.middleware.subject.Subject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,89 +49,122 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 // does this event pertain to us? was the group or one of its parent folders marked for sync
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_ADD.name);
-                if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.addGroup(changeLogEntry, consumer.consumerName);
+                final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+                if (group != null) {
+                    if (consumer.isGroupMarkedForSync(groupName)) {
+                        consumer.addGroup(group, changeLogEntry, consumer);
+                    } else {
+                        // skipping changeLogEntry that doesn't pertain to us
+                        LOG.debug("{} skipping addGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    }
                 } else {
-                    // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping addGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    // group deleted before sync'd to target
+                    LOG.debug("{} skipping addGroup since {} was deleted from grouper before sync'd to target", consumer.consumerName, groupName);
                 }
             }
         },
         group_updateGroup {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.name);
-                if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.updateGroup(changeLogEntry, consumer.consumerName);
+                final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+                if (group != null) {
+                    if (consumer.isGroupMarkedForSync(group.getName())) {
+                        consumer.updateGroup(group, changeLogEntry, consumer);
+                    } else {
+                        // skipping changeLogEntry that doesn't pertain to us
+                        LOG.debug("{} skipping updateGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    }
                 } else {
-                    // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping updateGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    // group deleted before updated at target
+                    LOG.debug("{} skipping updateGroup since {} was deleted from grouper", consumer.consumerName, groupName);
                 }
             }
         },
         group_deleteGroup {
+            // case when group with marker on a parent folder is deleted, remove the group from target
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_DELETE.name);
-                if (consumer.isGroupMarkedForSync(groupName)) {
-                    // case when marker is on parent folder of deleted group
-                    consumer.deleteGroup(groupName, changeLogEntry, consumer.consumerName);
+                PITGroup pitGroup = PITGroupFinder.findMostRecentByName(groupName, false);
+                if (pitGroup != null) {
+                    if (consumer.isGroupMarkedForSync(pitGroup.getName())) {
+                        // case when marker is on parent folder of deleted group
+                        // TODO handle deleted group when marker is on parent folder of deleted group...
+                        LOG.debug("{} found attributeSync marker for deleted group {}, calling removeDeletedGroup", consumer.consumerName, groupName);
+                        consumer.removeDeletedGroup(pitGroup, changeLogEntry, consumer);
+                    } else {
+                        // skipping changeLogEntry that doesn't pertain to us
+                        LOG.debug("{} skipping deleteGroup since group {} is not marked for sync", consumer.consumerName, groupName);
+                    }
                 } else {
-                    // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping deleteGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                    // should ever get here?
+                    LOG.debug("{} Couldn't find deleted group {} in PIT, already purged?. Let fullSync sort it out", consumer.consumerName, groupName);
                 }
             }
         },
         membership_addMembership {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_ADD.groupName);
+                final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+                final String subjectId = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_ADD.subjectId);
+                final Subject subject = SubjectFinder.findById(subjectId, false);
                 if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.addMembership(changeLogEntry, consumer.consumerName);
+                    consumer.addMembership(subject, group, changeLogEntry, consumer);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping addMembership since {} is not marked for sync", consumer.consumerName, groupName);
+                    LOG.debug("{} skipping addMembership for subject {} since group {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
                 }
             }
         },
         membership_deleteMembership {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
                 final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_DELETE.groupName);
+                final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+                final String subjectId = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_DELETE.subjectId);
+                final Subject subject = SubjectFinder.findById(subjectId, false);
                 if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.deleteMembership(changeLogEntry, consumer.consumerName);
+                    consumer.removeMembership(subject, group, changeLogEntry, consumer);
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping deleteMembership since {} is not marked for sync", consumer.consumerName, groupName);
+                    LOG.debug("{} skipping deleteMembership for subject {} since {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
                 }
             }
         },
         attributeAssign_addAttributeAssign {
-            // on assignment of syncAttribute marker, create all the groups or group (if directly assigned), and add any memberships
+            /**
+             * On assignment of the syncAttribute marker, create all the groups or group (if directly assigned)
+             * and any current memberships at the target.
+             */
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
-                // is this our syncAttribute?
+                // check if this is our syncAttribute, otherwise nothing to do.
                 final String attributeDefNameName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_ADD.attributeDefNameName);
                 if (consumer.syncAttribute.getName().equals(attributeDefNameName)) {
-                    // is it for a group? then create the group at the target
+                    // syncAttribute applied to a group, then create the group at the target
                     String assignType = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_ADD.assignType);
                     String ownerId1 = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.ATTRIBUTE_ASSIGN_ADD.ownerId1);
                     if (GROUP.equals(assignType)){
                         Group markedGroup = GroupFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false );
                         if (markedGroup != null) {
-                            consumer.createGroupAndMemberships(markedGroup, changeLogEntry, consumer.consumerName);
+                            consumer.addGroupAndMemberships(markedGroup, changeLogEntry, consumer);
                         } // couldn't find group, already deleted?
                     } else if (FOLDER.equals(assignType)){
+                        // syncAttribute applied to a folder, get all the groups below this folder and sub folders and create them at the target
                         Stem markedFolder = StemFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false);
                         if (markedFolder != null) {
-                            // get all the groups below this folder and sub folders and create them at the target
                             Set<Group> markedGroups = markedFolder.getChildGroups(Stem.Scope.SUB);
                             for( Group group : markedGroups) {
-                                consumer.createGroupAndMemberships(group, changeLogEntry, consumer.consumerName);
+                                consumer.addGroupAndMemberships(group, changeLogEntry, consumer);
                             }
                         } // couldn't find folder, already deleted?
                     }
+                } else {
+                    // not our syncAttribute, so nothing to do
+                    LOG.debug("{} skipping addAttributeAssign, {} is not our syncAttribute");
                 }
             }
         },
         attributeAssign_deleteAttributeAssign {
             /**
-             * On the removal of the syncAttribute marker, delete all the groups or group (if directly assigned) at the target, unless
+             * On removal of the syncAttribute marker, delete all the groups or group (if directly assigned) at the target, unless
              * otherwise still marked by direct assignment or a parent folder.
              */
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
@@ -146,11 +180,11 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                         if (group != null){
                             // case when group had a direct syncAttribute marker assignment removed, does it still have a parent marker?
                             if (group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(consumer.syncAttribute.getName(), false)) {
-                                LOG.debug("{} processed deleteAttributeAssign for group {}, but still marked by a parent folder.", consumer.consumerName, group.getName());
+                                LOG.debug("{} processed deleteAttributeAssign {} for group {}, but still marked by a parent folder.", new Object[]{consumer.consumerName, attributeDefNameName, group.getName()});
                             } else {
                                 // marker syncAttribute removed from group and no other parent folder marked so delete at target
-                                LOG.debug("{} processed deleteAttributeAssign for group {}, no other mark found so calling deleteGroup()", consumer.consumerName, group.getName());
-                                consumer.deleteGroup(group.getName(), changeLogEntry, consumer.consumerName);
+                                LOG.debug("{} processed deleteAttributeAssign {} for group {}, no other mark found so calling deleteGroup", new Object[]{consumer.consumerName, attributeDefNameName ,group.getName()});
+                                consumer.removeGroup(group, changeLogEntry, consumer);
                             }
                         } else {
                             // case when a group which had a direct syncAttribute marker was deleted, always delete at target
@@ -158,8 +192,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                             if (pitGroup != null) {
                                 String pitGroupName = pitGroup.getName();
                                 // marker syncAttribute removed when deleting a group, always delete at target
-                                LOG.debug("{} processed deleteAttributeAssign for deleted group {}, calling deleteGroup()", consumer.consumerName, pitGroupName);
-                                consumer.deleteGroup(pitGroupName, changeLogEntry, consumer.consumerName);
+                                LOG.debug("{} processed deleteAttributeAssign {} for deleted group {}, calling deleteGroup", new Object[]{consumer.consumerName, attributeDefNameName ,pitGroupName});
+                                consumer.removeDeletedGroup(pitGroup, changeLogEntry, consumer);
                             } else {
                                 // couldn't find group anywhere? so can't determine its name.
                                 LOG.error("{} failed to find group when processing deleteAttributeAssign so can't determine the group name, let fullSync sort it out.", consumer.consumerName);
@@ -173,11 +207,11 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                             Set<Group> unMarkedGroups = unMarkedFolder.getChildGroups(Stem.Scope.SUB);
                             for (Group group : unMarkedGroups) {
                                 // check that the group isn't marked directly or from some other parent folder
-                                if (!consumer.isGroupMarkedForSync(group.getName())) {
-                                    LOG.debug("{} processed deleteAttributeAssign for folder {}, no other mark found for {} so calling deleteGroup({})", new Object[]{consumer.consumerName, unMarkedFolder.getName(), group.getName(), group.getName()});
-                                    consumer.deleteGroup(group.getName(), changeLogEntry, consumer.consumerName);
+                                if (consumer.isGroupMarkedForSync(group.getName())) {
+                                    LOG.debug("{} processed deleteAttributeAssign {} for folder {}, found mark for group {} so nothing to do.", new Object[]{consumer.consumerName, attributeDefNameName, unMarkedFolder.getName(), group.getName()});
                                 } else {
-                                    LOG.debug("{} processed deleteAttributeAssign for folder {}, found mark for group {} so nothing to do.", new Object[]{consumer.consumerName, unMarkedFolder.getName(), group.getName()});
+                                    LOG.debug("{} processed deleteAttributeAssign {} for folder {}, no other mark found for group {} so calling deleteGroup", new Object[]{consumer.consumerName, attributeDefNameName, unMarkedFolder.getName(), group.getName(), group.getName()});
+                                    consumer.removeGroup(group, changeLogEntry, consumer);
                                 }
                             }
                         } else {
@@ -202,28 +236,32 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     /**
      * These methods are expected to be overriden in a subclass that is specific to a provisioning target. (e.g. Google Apps)
      */
-    protected void addGroup(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{} addGroup dispatched but not implemented in subclass.", consumerName);
+    protected void addGroup(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} addGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
     }
 
-    protected void updateGroup(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{} updateGroup dispatched but not implemented in subclass.", consumerName);
+    protected void updateGroup(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} updateGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
     }
 
-    protected void deleteGroup(String groupName, ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{} deleteGroup dispatched but not implemented in subclass.", consumerName);
+    protected void removeGroup(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} removeGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
     }
 
-    protected void addMembership(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{} addMembership dispatched but not implemented in subclass.", consumerName);
+    protected void removeDeletedGroup(PITGroup pitGroup, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} removeDeletedGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
     }
 
-    protected void deleteMembership(ChangeLogEntry changeLogEntry, String consumerName) {
-        LOG.debug("{} dispatched deleteMembership, but not implemented in subclass.", consumerName);
+    protected void addMembership(Subject subject, Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} addMembership {} to group {} dispatched but not implemented in subclass {}", new Object[]{consumerName, subject.getName(), group.getName(), consumerClassName});
     }
 
-    protected void createGroupAndMemberships(Group group, ChangeLogEntry changeLogEntry, String consumerName){
-        LOG.debug("{} dispatched createGroupAndMemberships for {}, but method not implemented in subclass.", consumerName, group);
+    protected void removeMembership(Subject subject, Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} dispatched removeMembership {} from group {}, but not implemented in subclass {}", new Object[]{consumerName, subject.getName(), group.getName(), consumerClassName});
+    }
+
+    protected void addGroupAndMemberships(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer){
+        LOG.debug("{} dispatched createGroupAndMemberships for group {}, but method not implemented in subclass {}", new Object[]{consumerName, group.getName(), consumerClassName});
     }
 
 
@@ -274,6 +312,11 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
     }
 
     private String consumerName;
+    private String consumerClassName;
+
+    public String getConsumerName(){
+        return consumerName;
+    }
 
     /** Name of marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     private String syncAttributeName;
@@ -284,6 +327,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
     /** Property name for marker attribute defined in changeLog.consumer.<consumerName>.syncAttributeName */
     public static String SYNC_ATTRIBUTE_NAME = "syncAttributeName";
+    /** Property name for subclassed target consumer defined in changeLog.consumer.<consumerName>.class */
+    public static String CONSUMER_CLASS_NAME = "class";
 
 
     /**
@@ -315,6 +360,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
         GrouperLoaderConfig config = GrouperLoaderConfig.retrieveConfig();
         syncAttributeName = config.propertyValueStringRequired(consumerName + "." + SYNC_ATTRIBUTE_NAME);
+        consumerClassName = config.propertyValueStringRequired(consumerName + "." + CONSUMER_CLASS_NAME);
 
         // syncAttribute name configured in grouper-loader.properties
         // e.g. changeLog.consumer.<consumerName>.<syncAttributeName> = o365
