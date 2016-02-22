@@ -122,10 +122,15 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 final String subjectId = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_DELETE.subjectId);
                 final Subject subject = SubjectFinder.findById(subjectId, false);
                 if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.removeMembership(subject, group, changeLogEntry, consumer);
+                    if (group != null) {
+                        consumer.removeMembership(subject, group, changeLogEntry, consumer);
+                    } else {
+                        // ignore for delete groups, since group will be removed at target anyway.
+                        LOG.debug("{} skipping deleteMembership for subject {} since group {} is already deleted", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                    }
                 } else {
                     // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping deleteMembership for subject {} since {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                    LOG.debug("{} skipping deleteMembership for subject {} since group {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
                 }
             }
         },
@@ -215,9 +220,9 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                                 }
                             }
                         } else {
-                            // couldn't find folder, already deleted? let fullSync sort it out.
-                            // shouldn't get here...can't delete a folder without first deleting child objects, so there should be nothing to delete at the target
-                            LOG.error("{} error processing deleteAttributeAssign for folder {}, let fullSync sort it out.", consumer.consumerName, unMarkedFolder.getName());
+                            // can't delete a folder without first deleting child objects, so there should be nothing to delete at the target
+                            // deleting a folder with an attribute assign will cause a deleteAttributeAssign to come after folder already deleted.
+                            LOG.error("{} processing deleteAttributeAssign for deleted folder, nothing to do.", consumer.consumerName);
                         }
                     }
                 }
@@ -234,7 +239,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
 
 
     /**
-     * These methods are expected to be overriden in a subclass that is specific to a provisioning target. (e.g. Google Apps)
+     * These methods are expected to be overidden in a subclass that is specific to a provisioning target. (e.g. Google Apps)
      */
     protected void addGroup(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
         LOG.debug("{} addGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
