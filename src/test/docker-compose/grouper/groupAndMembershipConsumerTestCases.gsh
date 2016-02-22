@@ -377,11 +377,103 @@ delStem(testFolderName);
 
 Grouper action: 2.0 Add indirectly marked group (i.e. add a group under a folder that is already marked)
 Target outcome: add the group
-Test 2.0.1:
+Test 2.0.1: Add group to a folder that is already marked
 1) Set up folder with syncAttribute mark
-2) Add (or move?) group to folder (or subfolder)
+2) Add (TODO what about move?) group to folder (or subfolder)
 Outcome:
 1) Group and its membership (in case of moved with membership) added to target
+GSH:
+// Test 2.0.1
+gs = GrouperSession.startRootSession();
+
+// add test folder and parent folder
+testFolderName = "testFolder"
+addStem("", testFolderName, testFolderName);
+parentFolderExtension = "parentFolder";
+addStem(testFolderName, parentFolderExtension, parentFolderExtension);
+
+// add syncAttribute mark to parent folder
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+parentFolder = StemFinder.findByName(gs, testFolderName + ":" + parentFolderExtension, true);
+parentFolder.getAttributeDelegate().addAttribute(syncAttr);
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print dispatching change log event attributeAssign_addAttributeAssign for change log 6133.
+//
+
+// add group1 to marked folder, expecting to be added to target
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add group testFolder:parentFolder:group1.
+//
+// end of Test 2.0.1
+
+// Test 2.0.1 teardown
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 2.0.1 teardown
+
+
+Test 2.0.2: Move group that has memberships to a folder that is already marked
+1) Set up folder with syncAttribute mark
+2) Set up group with membership outside of marked folder
+2) Move group to marked folder (or subfolder)
+Outcome:
+1) Group and its membership (in case of moved with membership) added to target
+GSH:
+// Test 2.0.2
+gs = GrouperSession.startRootSession();
+
+// add test folder and parent folder
+testFolderName = "testFolder"
+addStem("", testFolderName, testFolderName);
+parentFolderExtension = "parentFolder";
+addStem(testFolderName, parentFolderExtension, parentFolderExtension);
+
+// add syncAttribute mark to parent folder
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+parentFolder = StemFinder.findByName(gs, testFolderName + ":" + parentFolderExtension, true);
+parentFolder.getAttributeDelegate().addAttribute(syncAttr);
+
+// add group and membership outside of marked folder
+group1Name = testFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+bob = "banderson";
+ann = "agasper";
+bill = "bbrown705";
+addMember(group1Name, bob);
+addMember(group1Name, ann);
+addMember(group1Name, bill);
+
+//
+// wait for group_debug.log
+//  changeLog.consumer.print skipping addMembership for subject Bill Brown since group testFolder:group1 is not marked for sync
+//
+
+// move group1 to marked folder, expect to add group and membership to target
+group1.move(parentFolder);
+
+//
+// wait for grouper_debug.log:
+//  TODO: got 3 group update change logs?
+//
+// end of Test 2.0.2
+
+// Test 2.0.2 teardown
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 2.0.2 teardown
+
+
+
+
+
 
 
 Grouper action: 3.0 Delete a directly marked group*
