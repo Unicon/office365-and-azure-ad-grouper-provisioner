@@ -183,7 +183,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                                 LOG.debug("{} processed deleteAttributeAssign {} for group {}, but still marked by a parent folder.", new Object[]{consumer.consumerName, attributeDefNameName, group.getName()});
                             } else {
                                 // marker syncAttribute removed from group and no other parent folder marked so delete at target
-                                LOG.debug("{} processed deleteAttributeAssign {} for group {}, no other mark found so calling deleteGroup", new Object[]{consumer.consumerName, attributeDefNameName ,group.getName()});
+                                LOG.debug("{} processed deleteAttributeAssign {} for group {}, no other mark found so calling removeGroup", new Object[]{consumer.consumerName, attributeDefNameName ,group.getName()});
                                 consumer.removeGroup(group, changeLogEntry, consumer);
                             }
                         } else {
@@ -192,7 +192,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                             if (pitGroup != null) {
                                 String pitGroupName = pitGroup.getName();
                                 // marker syncAttribute removed when deleting a group, always delete at target
-                                LOG.debug("{} processed deleteAttributeAssign {} for deleted group {}, calling deleteGroup", new Object[]{consumer.consumerName, attributeDefNameName ,pitGroupName});
+                                LOG.debug("{} processed deleteAttributeAssign {} for deleted group {}, calling removeDeletedGroup", new Object[]{consumer.consumerName, attributeDefNameName ,pitGroupName});
                                 consumer.removeDeletedGroup(pitGroup, changeLogEntry, consumer);
                             } else {
                                 // couldn't find group anywhere? so can't determine its name.
@@ -210,7 +210,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                                 if (consumer.isGroupMarkedForSync(group.getName())) {
                                     LOG.debug("{} processed deleteAttributeAssign {} for folder {}, found mark for group {} so nothing to do.", new Object[]{consumer.consumerName, attributeDefNameName, unMarkedFolder.getName(), group.getName()});
                                 } else {
-                                    LOG.debug("{} processed deleteAttributeAssign {} for folder {}, no other mark found for group {} so calling deleteGroup", new Object[]{consumer.consumerName, attributeDefNameName, unMarkedFolder.getName(), group.getName(), group.getName()});
+                                    LOG.debug("{} processed deleteAttributeAssign {} for folder {}, no other mark found for group {} so calling removeGroup", new Object[]{consumer.consumerName, attributeDefNameName, unMarkedFolder.getName(), group.getName(), group.getName()});
                                     consumer.removeGroup(group, changeLogEntry, consumer);
                                 }
                             }
