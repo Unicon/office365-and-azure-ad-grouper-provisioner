@@ -127,16 +127,21 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
                 final String subjectId = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_DELETE.subjectId);
                 final Subject subject = SubjectFinder.findById(subjectId, false);
-                if (consumer.isGroupMarkedForSync(groupName)) {
-                    if (group != null) {
-                        consumer.removeMembership(subject, group, changeLogEntry, consumer);
-                    } else {
-                        // ignore for delete groups, since group will be removed at target anyway.
-                        LOG.debug("{} skipping deleteMembership for subject {} since group {} is already deleted", new Object[]{consumer.consumerName, subject.getName(), groupName});
-                    }
+                // we only care about effective membership for people in marked groups, skip deleteMembership for everything else
+                if (!subject.getType().equals(SubjectTypeEnum.PERSON)) {
+                    LOG.debug("{} skipping deleteMembership since subject {} is not a person", consumer.consumerName, subject.getName());
                 } else {
-                    // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping deleteMembership for subject {} since group {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                    if (consumer.isGroupMarkedForSync(groupName)) {
+                        if (group != null) {
+                            consumer.removeMembership(subject, group, changeLogEntry, consumer);
+                        } else {
+                            // ignore for deleted groups, since group will be removed at target anyway.
+                            LOG.debug("{} skipping deleteMembership for subject {} since group {} is already deleted", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                        }
+                    } else {
+                        // skipping changeLogEntry that doesn't pertain to us
+                        LOG.debug("{} skipping deleteMembership for subject {} since group {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                    }
                 }
             }
         },
