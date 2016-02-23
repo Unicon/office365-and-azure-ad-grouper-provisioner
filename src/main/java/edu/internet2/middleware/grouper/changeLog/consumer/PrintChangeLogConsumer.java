@@ -27,7 +27,7 @@ public class PrintChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     @Override
     protected void addGroupAndMemberships(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer){
         // changeLogEntry type is attributeAssign_addAttributeAssign on group or folder
-        LOG.debug("{} add group {} and memberships", new Object[] {consumer.getConsumerName(), group.getName()});
+        LOG.debug("{} add group {} and memberships.", new Object[] {consumer.getConsumerName(), group.getName()});
     }
 
     @Override
