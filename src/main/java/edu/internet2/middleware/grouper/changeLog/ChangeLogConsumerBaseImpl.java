@@ -288,12 +288,14 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
      */
     private boolean isGroupMarkedForSync(String groupName) {
 
+        boolean markedForSync;
+
         // have we seen this group already in this run
         if (markedFoldersAndGroups.containsKey(groupName)) {
-            return markedFoldersAndGroups.get(groupName).equals(MARKED);
+            markedForSync = markedFoldersAndGroups.get(groupName).equals(MARKED);
+            LOG.debug("{} found group {} in markedFoldersAndGroups cache as MARKED", consumerName, groupName);
+            return markedForSync;
         }
-
-        boolean markedForSync;
 
         // looking for the group
         final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
@@ -301,6 +303,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         if (group != null) {
             // is it marked with the syncAttribute?
             markedForSync = group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(syncAttribute.getName(), false);
+            LOG.debug("{} found group {}, is it marked: {}", new Object[]{consumerName, groupName, markedForSync});
         } else {
             // looking for the deleted group in the PIT
             PITGroup pitGroup = PITGroupFinder.findMostRecentByName(groupName, false);
@@ -310,6 +313,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 PITAttributeDefName pitSyncAttribute = pitSyncAttributes.iterator().next();
                 Set<PITAttributeAssign> pitAttributeAssigns = PITAttributeAssignFinder.findByOwnerPITGroupAndPITAttributeDefName(pitGroup, pitSyncAttribute, pitGroup.getStartTime(), pitGroup.getEndTime());
                 markedForSync = pitAttributeAssigns.isEmpty();
+                LOG.debug("{} found pitGroup {}, is it marked: {}", new Object[]{consumerName, pitGroup.getName(), markedForSync});
             } else {
                 // couldn't find group anywhere including the PIT
                 LOG.debug("{} checking for {} marker, but could not find group {} anywhere, including the PIT.", new Object[]{consumerName, syncAttributeName, groupName});
