@@ -18,6 +18,7 @@ import edu.internet2.middleware.grouper.pit.finder.PITAttributeAssignFinder;
 import edu.internet2.middleware.grouper.pit.finder.PITAttributeDefNameFinder;
 import edu.internet2.middleware.grouper.pit.finder.PITGroupFinder;
 import edu.internet2.middleware.subject.Subject;
+import edu.internet2.middleware.subject.provider.SubjectTypeEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,11 +108,16 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
                 final String subjectId = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.MEMBERSHIP_ADD.subjectId);
                 final Subject subject = SubjectFinder.findById(subjectId, false);
-                if (consumer.isGroupMarkedForSync(groupName)) {
-                    consumer.addMembership(subject, group, changeLogEntry, consumer);
+                // we only care about effective membership for people in marked groups, skip addMembership for everything else
+                if (!subject.getType().equals(SubjectTypeEnum.PERSON)) {
+                    LOG.debug("{} skipping addMembership since subject {} is not a person", consumer.consumerName, subject.getName());
                 } else {
-                    // skipping changeLogEntry that doesn't pertain to us
-                    LOG.debug("{} skipping addMembership for subject {} since group {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                    if (consumer.isGroupMarkedForSync(groupName)) {
+                        consumer.addMembership(subject, group, changeLogEntry, consumer);
+                    } else {
+                        // skipping changeLogEntry that doesn't pertain to us
+                        LOG.debug("{} skipping addMembership for subject {} since group {} is not marked for sync", new Object[]{consumer.consumerName, subject.getName(), groupName});
+                    }
                 }
             }
         },
