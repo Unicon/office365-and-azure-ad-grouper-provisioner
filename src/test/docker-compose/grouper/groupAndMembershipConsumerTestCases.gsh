@@ -573,18 +573,142 @@ Test 4.0.1: Membership add to directly marked group
 2) Add member to group
 Outcome:
 1) members added to group at target
+GSH:
+// Test 4.0.1
+gs = GrouperSession.startRootSession();
+bob = "banderson";
+ann = "agasper";
+bill = "bbrown705";
+testFolderName = "testFolder"
+
+// add group1 and membership to parent folder
+parentFolderName = testFolderName + ":parentFolder";
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group1Name, bob);
+addMember(group1Name, ann);
+
+
+// add syncAttribute mark to group1
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+group1.getAttributeDelegate().addAttribute(syncAttr);
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships
+//
+
+// add new membership, expect to add to target
+addMember(group1Name, bill);
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add subject Bill Brown to group testFolder:parentFolder:group1.
+//
+// end of Test 4.0.1
+
+// Test 4.0.1 teardown
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 4.0.1 teardown
+
 
 Test 4.0.2: Membership add to indirectly marked group (i.e. parent folder is marked)
-1) Test 2.0.1
+1) Test 4.0.2
 2) Add member to group
 Outcome:
 1) members added to group at target
+GSH:
+// Test 4.0.2
+gs = GrouperSession.startRootSession();
+
+// add test folder and parent folder
+testFolderName = "testFolder"
+addStem("", testFolderName, testFolderName);
+parentFolderExtension = "parentFolder";
+addStem(testFolderName, parentFolderExtension, parentFolderExtension);
+
+// add syncAttribute mark to parent folder
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+parentFolder = StemFinder.findByName(gs, testFolderName + ":" + parentFolderExtension, true);
+parentFolder.getAttributeDelegate().addAttribute(syncAttr);
+
+// add group1 to marked folder, expecting to be added to target
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add group testFolder:parentFolder:group1.
+//
+
+// add new membership, expect to add to target
+addMember(group1Name, "bbrown705");
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add subject Bill Brown to group testFolder:parentFolder:group1.
+//
+// end of Test 4.0.2
+
+// Test 4.0.2 teardown
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 4.0.2 teardown
+
 
 Test 4.0.3: Membership add by grouper effective membership (via sub groups or group math)
 1) Test 4.0.1
 2) Add a sub group with membership to marked group
 Outcome:
 1) New effective members via subgroup are added to group at target
+GSH:
+// Test 4.0.3
+gs = GrouperSession.startRootSession();
+bob = "banderson";
+ann = "agasper";
+bill = "bbrown705";
+testFolderName = "testFolder"
+
+// add group1 and membership to parent folder
+parentFolderName = testFolderName + ":parentFolder";
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group1Name, bob);
+addMember(group1Name, ann);
+
+group2Name = parentFolderName + ":group2";
+group2 = new GroupSave(gs).assignName(group2Name).assignGroupNameToEdit(group2Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group2Name, bill);
+
+// add syncAttribute mark to group1
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+group1.getAttributeDelegate().addAttribute(syncAttr);
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships
+//
+
+// add group2 to group1, expecting to add group2 memberships to target as effective members of group1
+addMember(group1Name, group2.getName());
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add subject Bill Brown to group testFolder:parentFolder:group1.
+//
+// end of Test 4.0.3
+
+// Test 4.0.3 teardown
+delGroup(group1Name);
+delGroup(group2Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 4.0.3 teardown
+
+
 
 
 Grouper action: 4.1 Membership delete on a marked group (directly or indirect marked)
