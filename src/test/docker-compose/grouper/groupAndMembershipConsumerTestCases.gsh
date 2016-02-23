@@ -709,8 +709,6 @@ delStem(testFolderName);
 // end of Test 4.0.3 teardown
 
 
-
-
 Grouper action: 4.1 Membership delete on a marked group (directly or indirect marked)
 Target outcome: remove membership
 Test 4.1.1: Membership delete to directly marked group
@@ -718,6 +716,52 @@ Test 4.1.1: Membership delete to directly marked group
 2) Remove member from marked group
 Outcome:
 1) membership removed from target
+GSH:
+// Test 4.1.1
+gs = GrouperSession.startRootSession();
+bob = "banderson";
+ann = "agasper";
+bill = "bbrown705";
+testFolderName = "testFolder"
+
+// add group1 and membership to parent folder
+parentFolderName = testFolderName + ":parentFolder";
+group1Name = parentFolderName + ":group1";
+group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
+addMember(group1Name, bob);
+addMember(group1Name, ann);
+
+// add syncAttribute mark to group1
+syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
+group1.getAttributeDelegate().addAttribute(syncAttr);
+
+// add new membership, expect to add to target
+addMember(group1Name, bill);
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print add subject Bill Brown to group testFolder:parentFolder:group1.
+//
+
+// remove bill from marked group, expect to remove bill from target
+delMember(group1Name, bill);
+
+//
+// wait for grouper_debug.log:
+//  changeLog.consumer.print remove subject Bill Brown from group testFolder:parentFolder:group1.
+//
+// end of Test 4.1.1
+
+// Test 4.1.1 teardown
+delGroup(group1Name);
+delStem(parentFolderName);
+delStem(testFolderName);
+// end of Test 4.1.1 teardown
+
+
+
+
+
 
 Test 4.1.2 Membership delete to indirectly marked group (i.e. parent folder is marked)
 1) Test 4.0.2
