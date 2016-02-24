@@ -30,7 +30,7 @@ addMember(group2Name, bob);
 addMember(group2Name, ann);
 addMember(group2Name, bill);
 
-print("wait for grouper_debug.log: changeLog.consumer.print skipping addMembership for subject Bill Brown since group test_1_0_1:parentFolder:subFolder:group2 is not marked for sync");
+print("wait for grouper_debug.log: changeLog.consumer.print skipping addMembership for subject Bill Brown since group testFolder:parentFolder:subFolder:group2 is not marked for sync");
 print("hit return to continue");
 in.readLine();
 
@@ -40,8 +40,8 @@ parentFolder = StemFinder.findByName(gs, parentFolderName, true);
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("added syncAttribute to parent folder")
-print("wait for grouper_debug.log: changeLog.consumer.print add group test_1_0_1:parentFolder:group1 and memberships");
-print("wait for grouper_debug.log: changeLog.consumer.print add group test_1_0_1:parentFolder:subFolder:group2 and memberships");
+print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships");
+print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:subFolder:group2 and memberships");
 print("end of Test 1.0.1 Marking a parent folder");
 print("hit return to teardown test");
 in.readLine();

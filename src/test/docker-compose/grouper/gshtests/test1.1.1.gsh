@@ -36,8 +36,8 @@ parentFolder = StemFinder.findByName(gs, parentFolderName, true);
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("add syncAttribute mark to parent folder");
-print("wait for grouper_debug.log: changeLog.consumer.print add group test_1_0_1:parentFolder:group1 and memberships");
-print("wait for grouper_debug.log: changeLog.consumer.print add group test_1_0_1:parentFolder:subFolder:group2 and memberships");
+print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships.");
+print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:subFolder:group2 and memberships.");
 print("hit return to continue");
 in.readLine();
 
@@ -45,8 +45,8 @@ in.readLine();
 parentFolder.getAttributeDelegate().removeAttribute(syncAttr);
 
 print("removed syncAttribute mark");
-print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder test_1_0_1:parentFolder, no other mark found for group test_1_0_1:parentFolder:group1 so calling deleteGroup");
-print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder test_1_0_1:parentFolder, no other mark found for group test_1_0_1:parentFolder:subFolder:group2 so calling deleteGroup");
+print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder testFolder:parentFolder, no other mark found for group testFolder:parentFolder:group1 so calling deleteGroup");
+print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder testFolder:parentFolder, no other mark found for group testFolder:parentFolder:subFolder:group2 so calling deleteGroup");
 print("end of Test 1.1.1");
 print("hit return to teardown test");
 in.readLine();
