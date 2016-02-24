@@ -7,6 +7,8 @@ import edu.internet2.middleware.grouper.attr.AttributeDefName;
 import edu.internet2.middleware.grouper.attr.AttributeDefType;
 import edu.internet2.middleware.grouper.attr.finder.AttributeDefFinder;
 import edu.internet2.middleware.grouper.attr.finder.AttributeDefNameFinder;
+import edu.internet2.middleware.grouper.cache.EhcacheController;
+import edu.internet2.middleware.grouper.cache.GrouperCache;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogConsumerBase;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogEntry;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogProcessorMetadata;
@@ -195,6 +197,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                         Group group = GroupFinder.findByUuid(GrouperSession.staticGrouperSession(false), ownerId1, false);
                         if (group != null){
                             // case when group had a direct syncAttribute marker assignment removed, does it still have a parent marker?
+                            // need to flush edu.internet2.middleware.grouper.attr.assign.AttributeAssignBaseDelegate.objectHasAttributeCache to make sure syncAttribute is cleared
+                            EhcacheController.ehcacheController().getGrouperCache("edu.internet2.middleware.grouper.attr.assign.AttributeAssignBaseDelegate.objectHasAttributeCache").clear();
                             if (group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(consumer.syncAttribute.getName(), false)) {
                                 LOG.debug("{} processed deleteAttributeAssign {} for group {}, but still marked by a parent folder.", new Object[]{consumer.consumerName, attributeDefNameName, group.getName()});
                             } else {
@@ -221,6 +225,8 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                         if (unMarkedFolder != null) {
                             // get all the groups below this folder and sub folders and to see if they are still marked, otherwise delete them at the target
                             Set<Group> unMarkedGroups = unMarkedFolder.getChildGroups(Stem.Scope.SUB);
+                            // need to flush edu.internet2.middleware.grouper.attr.assign.AttributeAssignBaseDelegate.objectHasAttributeCache to make sure syncAttribute is cleared
+                            EhcacheController.ehcacheController().getGrouperCache("edu.internet2.middleware.grouper.attr.assign.AttributeAssignBaseDelegate.objectHasAttributeCache").clear();
                             for (Group group : unMarkedGroups) {
                                 // check that the group isn't marked directly or from some other parent folder
                                 if (consumer.isGroupMarkedForSync(group.getName())) {
@@ -293,7 +299,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         // have we seen this group already in this run
         if (markedFoldersAndGroups.containsKey(groupName)) {
             markedForSync = markedFoldersAndGroups.get(groupName).equals(MARKED);
-            LOG.debug("{} found group {} in markedFoldersAndGroups cache as MARKED", consumerName, groupName);
+            LOG.debug("{} found group {} in markedFoldersAndGroups cache, isGroupMarkedForSync: {}", new Object[]{consumerName, groupName, markedForSync});
             return markedForSync;
         }
 
@@ -303,7 +309,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         if (group != null) {
             // is it marked with the syncAttribute?
             markedForSync = group.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(syncAttribute.getName(), false);
-            LOG.debug("{} found group {}, is it marked: {}", new Object[]{consumerName, groupName, markedForSync});
+            LOG.debug("{} found group {}, isGroupMarkedForSync: {}", new Object[]{consumerName, groupName, markedForSync});
         } else {
             // looking for the deleted group in the PIT
             PITGroup pitGroup = PITGroupFinder.findMostRecentByName(groupName, false);
@@ -313,7 +319,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 PITAttributeDefName pitSyncAttribute = pitSyncAttributes.iterator().next();
                 Set<PITAttributeAssign> pitAttributeAssigns = PITAttributeAssignFinder.findByOwnerPITGroupAndPITAttributeDefName(pitGroup, pitSyncAttribute, pitGroup.getStartTime(), pitGroup.getEndTime());
                 markedForSync = pitAttributeAssigns.isEmpty();
-                LOG.debug("{} found pitGroup {}, is it marked: {}", new Object[]{consumerName, pitGroup.getName(), markedForSync});
+                LOG.debug("{} found pitGroup {}, isGroupMarkedForSync: {}", new Object[]{consumerName, pitGroup.getName(), markedForSync});
             } else {
                 // couldn't find group anywhere including the PIT
                 LOG.debug("{} checking for {} marker, but could not find group {} anywhere, including the PIT.", new Object[]{consumerName, syncAttributeName, groupName});
