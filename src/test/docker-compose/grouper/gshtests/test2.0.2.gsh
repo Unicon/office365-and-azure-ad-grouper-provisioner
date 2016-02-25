@@ -30,7 +30,7 @@ addMember(group1Name, ann);
 addMember(group1Name, bill);
 
 print("wait for group_debug.log: changeLog.consumer.print skipping addMembership for subject Bill Brown since group testFolder:group1 is not marked for sync");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("move group1 to marked folder, expect to add group and membership to target");

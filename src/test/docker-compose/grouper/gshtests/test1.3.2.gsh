@@ -30,7 +30,7 @@ parentFolder = StemFinder.findByName(gs, parentFolderName, true);
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("remove syncAttribute mark from group, expecting indirect mark from parent folder to override removeGroup.");

@@ -30,7 +30,7 @@ parentFolder = StemFinder.findByName(gs, parentFolderName, true);
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("Delete the group, expecting it to be removed from the target");

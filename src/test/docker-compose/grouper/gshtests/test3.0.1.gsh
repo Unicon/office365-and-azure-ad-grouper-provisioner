@@ -28,13 +28,13 @@ syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:pr
 group1.getAttributeDelegate().addAttribute(syncAttr);
 
 print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("Delete the group, expecting it to be removed from the target");
 delGroup(group1Name)
 
-print("wait for grouper_debug.log:);
+print("wait for grouper_debug.log");
 print("  changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for deleted group testFolder:parentFolder:group1, calling deleteGroup");
 print("end of Test 3.0.1");
 print("hit return to teardown test");

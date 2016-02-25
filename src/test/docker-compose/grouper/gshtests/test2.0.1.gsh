@@ -22,7 +22,7 @@ parentFolder = StemFinder.findByName(gs, testFolderName + ":" + parentFolderExte
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("wait for grouper_debug.log: changeLog.consumer.print dispatching change log event attributeAssign_addAttributeAssign for change log...");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("add group1 to marked folder, expecting to be added to target");

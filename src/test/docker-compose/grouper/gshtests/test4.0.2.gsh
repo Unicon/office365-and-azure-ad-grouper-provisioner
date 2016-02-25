@@ -26,7 +26,7 @@ group1Name = parentFolderName + ":group1";
 group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
 
 print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1.");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("add new membership, expect to add to target");

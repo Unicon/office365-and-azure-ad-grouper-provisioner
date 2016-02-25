@@ -30,7 +30,7 @@ syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:pr
 group1.getAttributeDelegate().addAttribute(syncAttr);
 
 print("wait for grouper_debug.log: changeLog.consumer.print add group testFolder:parentFolder:group1 and memberships");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("add group2 to group1, expecting to add group2 memberships to target as effective members of group1");

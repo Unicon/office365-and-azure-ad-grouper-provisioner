@@ -31,7 +31,7 @@ print("add new membership, expect to add to target");
 addMember(group1Name, bill);
 
 print("wait for grouper_debug.log: changeLog.consumer.print add subject Bill Brown to group testFolder:parentFolder:group1.");
-print("hit return to continue);
+print("hit return to continue");
 in.readLine();
 
 print("remove bill from marked group, expect to remove bill from target");
