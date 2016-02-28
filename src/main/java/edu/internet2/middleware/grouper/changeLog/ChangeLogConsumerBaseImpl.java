@@ -68,18 +68,41 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         },
         group_updateGroup {
             public void process(ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
-                final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.name);
-                final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
-                if (group != null) {
-                    if (consumer.isGroupMarkedForSync(group.getName())) {
-                        consumer.updateGroup(group, changeLogEntry, consumer);
+                // a group "move" is a change in group name and shows up in change log as a group update
+                if ("name".equals(changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.propertyChanged))) {
+                    // group was moved to a new folder, get the new name and the old name
+                    final String newGroupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.propertyNewValue);
+                    final String oldGroupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.propertyOldValue);
+
+                    // if newGroupName is marked for sync then rename or add group and membership at target
+                    // this covers three cases:
+                    //  1) directly marked group moved
+                    //  2) indirectly marked group moved and is still indirectly marked
+                    //  3) unmarked group move and is now marked (indirectly)
+                    if (consumer.isGroupMarkedForSync(newGroupName)) {
+                        consumer.renameGroup(oldGroupName, newGroupName, changeLogEntry, consumer);
+                        LOG.debug("{} processed groupUpdate for group move. group {} is marked so calling renameGroup for old group {}.", new Object[]{consumer.consumerName, newGroupName, oldGroupName});
                     } else {
-                        // skipping changeLogEntry that doesn't pertain to us
-                        LOG.debug("{} skipping updateGroup since {} is not marked for sync", consumer.consumerName, groupName);
+                        // newGroupName not marked, check oldGroupName folders for indirect mark, if so delete at target, otherwise no-op
+
+                        // get the parent folder path name from some:parent:path:oldGroupName
+                        final int lastPathSeparator = oldGroupName.lastIndexOf(":");
+                        final String oldGroupNameFolderPath = oldGroupName.substring(0, lastPathSeparator);
+                        final Stem oldGroupParentFolder = StemFinder.findByName(GrouperSession.staticGrouperSession(false), oldGroupNameFolderPath, false);
+                        if (oldGroupParentFolder != null && oldGroupParentFolder.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(consumer.syncAttribute.getName(), false)) {
+                            // oldGroupName previously marked, so remove from target
+                            consumer.removeMovedGroup(oldGroupName, changeLogEntry, consumer);
+                            LOG.debug("{} processed groupUpdate for group move. group {} is no longer marked so calling removeMovedGroup for old group {}.", new Object[]{consumer.consumerName, newGroupName, oldGroupName});
+                        } else {
+                            // could find moved parent folder (already deleted?) or not previously marked, no-op in either case
+                            LOG.debug("{} processed groupUpdate for group {} move. Couldn't find parent folder for old group {}, or it was not previously marked, no-op in either case.", new Object[]{consumer.consumerName, newGroupName, oldGroupName});
+                        }
                     }
                 } else {
-                    // group deleted before updated at target
-                    LOG.debug("{} skipping updateGroup since {} was deleted from grouper", consumer.consumerName, groupName);
+                    // some other group property update; description, parentStemId, displayName, etc
+                    final String propertyChanged = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.propertyChanged);
+                    final String groupName = changeLogEntry.retrieveValueForLabel(ChangeLogLabels.GROUP_UPDATE.name);
+                    LOG.debug("{} processed groupUpdate for group {}. Property changed {} is not supported, so nothing to do.", new Object[]{consumer.consumerName, groupName, propertyChanged});
                 }
             }
         },
@@ -266,8 +289,24 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         LOG.debug("{} updateGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
     }
 
+    /**
+     * renameGroup may be called for groups that have not previously been marked, need to check the target to be sure.
+     * If the oldGroupName doesn't exist at the target, then add the newGroupName and all its memberships.
+     */
+    protected void renameGroup(String oldGroupName, String newGroupName, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} renameGroup {} to {} dispatched but not implemented in subclass {}", new Object[]{consumerName, oldGroupName, newGroupName, consumerClassName});
+    }
+
     protected void removeGroup(Group group, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
         LOG.debug("{} removeGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
+    }
+
+    /**
+     * removeMovedGroup may be called for groups that have not previously been marked, need to check the target to be sure.
+     * If the oldGroupName doesn't exist at the target, this call should be a no-op.
+     */
+    protected void removeMovedGroup(String oldGroupName, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
+        LOG.debug("{} removeMovedGroup {} dispatched but not implemented in subclass {}", consumerName, consumerClassName);
     }
 
     protected void removeDeletedGroup(PITGroup pitGroup, ChangeLogEntry changeLogEntry, ChangeLogConsumerBaseImpl consumer) {
@@ -304,7 +343,7 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
         }
 
         // looking for the group
-        final Group group = GroupFinder.findByName(GrouperSession.staticGrouperSession(false), groupName, false);
+        final Group group = GroupFinder.findByCurrentName(GrouperSession.staticGrouperSession(false), groupName, false);
 
         if (group != null) {
             // is it marked with the syncAttribute?
@@ -318,7 +357,16 @@ public class ChangeLogConsumerBaseImpl extends ChangeLogConsumerBase {
                 Set<PITAttributeDefName> pitSyncAttributes = PITAttributeDefNameFinder.findByName(syncAttribute.getName(), false, true);
                 PITAttributeDefName pitSyncAttribute = pitSyncAttributes.iterator().next();
                 Set<PITAttributeAssign> pitAttributeAssigns = PITAttributeAssignFinder.findByOwnerPITGroupAndPITAttributeDefName(pitGroup, pitSyncAttribute, pitGroup.getStartTime(), pitGroup.getEndTime());
+                // only gets direct group assignments, check folder next if no direct mark
                 markedForSync = pitAttributeAssigns.isEmpty();
+                if (!markedForSync) {
+                    // check for folders for mark
+                    Stem folder = StemFinder.findByUuid(GrouperSession.staticGrouperSession(false), pitGroup.getStemId(), false);
+                    if(folder != null) {
+                        markedForSync = folder.getAttributeDelegate().hasAttributeOrAncestorHasAttribute(syncAttribute.getName(), false);
+                        LOG.debug("{} found pitGroup {}, isGroupMarkedForSync: {}", new Object[]{consumerName, pitGroup.getName(), markedForSync});
+                    }
+                }
                 LOG.debug("{} found pitGroup {}, isGroupMarkedForSync: {}", new Object[]{consumerName, pitGroup.getName(), markedForSync});
             } else {
                 // couldn't find group anywhere including the PIT
