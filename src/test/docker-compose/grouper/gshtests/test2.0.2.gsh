@@ -33,7 +33,7 @@ print("wait for group_debug.log: changeLog.consumer.print skipping addMembership
 print("hit return to continue");
 in.readLine();
 
-print("move group1 to marked folder, expect to add group and membership to target");
+print("move group1 to marked folder, expect to add group and membership to target via renameGroup.");
 group1.move(parentFolder);
 
 print("wait for grouper_debug.log: ");

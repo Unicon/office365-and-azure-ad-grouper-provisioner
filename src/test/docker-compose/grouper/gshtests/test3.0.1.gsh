@@ -35,7 +35,7 @@ print("Delete the group, expecting it to be removed from the target");
 delGroup(group1Name)
 
 print("wait for grouper_debug.log");
-print("  changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for deleted group testFolder:parentFolder:group1, calling deleteGroup");
+print("  changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for deleted group testFolder:parentFolder:group1, calling removeDeletedGroup");
 print("end of Test 3.0.1");
 print("hit return to teardown test");
 in.readLine();

@@ -45,8 +45,8 @@ in.readLine();
 parentFolder.getAttributeDelegate().removeAttribute(syncAttr);
 
 print("removed syncAttribute mark");
-print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder testFolder:parentFolder, no other mark found for group testFolder:parentFolder:group1 so calling deleteGroup");
-print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder testFolder:parentFolder, no other mark found for group testFolder:parentFolder:subFolder:group2 so calling deleteGroup");
+print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder testFolder:parentFolder, no other mark found for group testFolder:parentFolder:group1 so calling removeGroup");
+print("wait for group_debug.log: changeLog.consumer.print processed deleteAttributeAssign etc:attribute:changeLogConsumer:printSync for folder testFolder:parentFolder, no other mark found for group testFolder:parentFolder:subFolder:group2 so calling removeGroup");
 print("end of Test 1.1.1");
 print("hit return to teardown test");
 in.readLine();
