@@ -14,11 +14,12 @@ print("add test folder and parent folder");
 testFolderName = "testFolder"
 addStem("", testFolderName, testFolderName);
 parentFolderExtension = "parentFolder";
+parentFolderName = testFolderName + ":" + parentFolderExtension;
 addStem(testFolderName, parentFolderExtension, parentFolderExtension);
 
 print("add syncAttribute mark to parent folder");
 syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
-parentFolder = StemFinder.findByName(gs, testFolderName + ":" + parentFolderExtension, true);
+parentFolder = StemFinder.findByName(gs, parentFolderName, true);
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("wait for grouper_debug.log: changeLog.consumer.print dispatching change log event attributeAssign_addAttributeAssign for change log...");

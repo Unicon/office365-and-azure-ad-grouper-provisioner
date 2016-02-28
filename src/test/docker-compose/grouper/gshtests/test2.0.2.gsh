@@ -10,13 +10,13 @@ gs = GrouperSession.startRootSession();
 
 print("add test folder and parent folder");
 testFolderName = "testFolder"
-addStem("", testFolderName, testFolderName);
+testFolder = addStem("", testFolderName, testFolderName);
 parentFolderExtension = "parentFolder";
-addStem(testFolderName, parentFolderExtension, parentFolderExtension);
+parentFolderName = testFolderName + ":" + parentFolderExtension;
+parentFolder = addStem(testFolder.getName(), parentFolderExtension, parentFolderExtension);
 
 print("add syncAttribute mark to parent folder");
 syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
-parentFolder = StemFinder.findByName(gs, testFolderName + ":" + parentFolderExtension, true);
 parentFolder.getAttributeDelegate().addAttribute(syncAttr);
 
 print("add group and membership outside of marked folder");
@@ -36,13 +36,14 @@ in.readLine();
 print("move group1 to marked folder, expect to add group and membership to target");
 group1.move(parentFolder);
 
-print("wait for grouper_debug.log: TODO: got 3 group update change logs?");
+print("wait for grouper_debug.log: ");
+print("  changeLog.consumer.print processed groupUpdate for group move. group testFolder:parentFolder:group1 is marked so calling renameGroup for old group testFolder:group1.");
 print("end of Test 2.0.2");
 print("hit return to teardown test");
 in.readLine();
 
 // Test 2.0.2 teardown
-delGroup(group1Name);
-delStem(parentFolderName);
+delGroup(group1.getName());
+delStem(parentFolder.getName());
 delStem(testFolderName);
 print("end of Test 2.0.2 teardown");

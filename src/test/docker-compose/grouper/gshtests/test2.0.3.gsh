@@ -1,9 +1,9 @@
-print("Test 2.0.2: Move group that has memberships to a folder that is already marked");
-// 1) Set up folder with syncAttribute mark
+print("Test 2.0.3: Move unmarked group that has memberships to a folder that is also not marked");
+// 1) Set up folder without syncAttribute mark
 // 2) Set up group with membership outside of marked folder
-// 3) Move group to marked folder (or subfolder)
+// 3) Move group to unmarked folder (or subfolder)
 // Outcome:
-// 1) Group and its membership (in case of moved with membership) added to target
+// 1) Nothing to do since group still unmarked
 
 BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
 gs = GrouperSession.startRootSession();
@@ -15,11 +15,7 @@ parentFolderExtension = "parentFolder";
 parentFolderName = testFolderName + ":" + parentFolderExtension;
 parentFolder = addStem(testFolder.getName(), parentFolderExtension, parentFolderExtension);
 
-print("add syncAttribute mark to parent folder");
-syncAttr = AttributeDefNameFinder.findByName("etc:attribute:changeLogConsumer:printSync", true);
-parentFolder.getAttributeDelegate().addAttribute(syncAttr);
-
-print("add group and membership outside of marked folder");
+print("add unmarked group and membership outside of marked folder");
 group1Name = testFolderName + ":group1";
 group1 = new GroupSave(gs).assignName(group1Name).assignGroupNameToEdit(group1Name).assignSaveMode(SaveMode.INSERT_OR_UPDATE).assignCreateParentStemsIfNotExist(true).save();
 bob = "banderson";
@@ -33,16 +29,18 @@ print("wait for group_debug.log: changeLog.consumer.print skipping addMembership
 print("hit return to continue");
 in.readLine();
 
-print("move group1 to marked folder, expect to add group and membership to target");
+print("move group1 to unmarked folder, expect nothing to do since still unmarked.");
 group1.move(parentFolder);
 
-print("wait for grouper_debug.log: TODO: got 3 group update change logs?");
-print("end of Test 2.0.2");
+print("wait for grouper_debug.log:");
+print("  changeLog.consumer.print processed groupUpdate for group testFolder:parentFolder:group1 move. Couldn't find parent folder for old group testFolder:group1, or it was not previously marked, no-op in either case.");
+
+print("end of Test 2.0.3");
 print("hit return to teardown test");
 in.readLine();
 
-// Test 2.0.2 teardown
+// Test 2.0.3 teardown
 delGroup(group1.getName());
 delStem(parentFolder.getName());
 delStem(testFolderName);
-print("end of Test 2.0.2 teardown");
+print("end of Test 2.0.3 teardown");
