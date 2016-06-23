@@ -1,20 +1,42 @@
+import org.apache.tools.ant.filters.ReplaceTokens
+
 apply plugin: 'java'
 apply plugin: 'distribution'
+apply plugin: 'idea'
+
+sourceCompatibility = 1.7
+targetCompatibility = 1.7
+
+configurations {
+    provided
+    compile.extendsFrom provided
+}
+
+sourceSets {
+    main {
+        compileClasspath += [configurations.provided]
+    }
+}
 
 repositories {
-    // Use 'jcenter' for resolving your dependencies.
-    jcenter()
+    mavenCentral()
 }
 
 dependencies {
-    compile ('edu.internet2.middleware.grouper:grouper:2.2.2') {
-      transitive = false
+    compile 'com.squareup.retrofit2:retrofit:2.0.2'
+    compile 'com.squareup.retrofit2:converter-moshi:2.0.2'
+    compile 'com.squareup.okhttp3:logging-interceptor:3.2.0'
+
+    compile 'com.microsoft.alm:oauth2-useragent:0.8.1'
+
+    provided ('edu.internet2.middleware.grouper:grouper:2.3.0') {
+        transitive = false
     }
-    compile 'edu.internet2.middleware.grouper:subject:2.2.2'
-    compile 'org.slf4j:slf4j-api:1.6.2'
+    provided 'edu.internet2.middleware.grouper:subject:2.3.0'
+    provided 'org.slf4j:slf4j-api:1.6.2'
     
     //Needed for hooks to compile
-    compile 'org.hibernate:hibernate-core:3.6.0.Final'
+    provided 'org.hibernate:hibernate-core:3.6.0.Final'
 }
 
 distributions {    
@@ -32,15 +54,18 @@ test.useTestNG()
 jar.dependsOn test
 
 task copyDocker(type: Copy) {
-    from 'src/test/docker-compose/'
+    from 'src/test/test-compose/'
     into 'build/docker-compose/'
+    filter(ReplaceTokens, tokens: [
+            'o365.clientId': project.'o365.clientId',
+            'o365.clientSecret': project.'o365.clientSecret'
+    ])
 }
 
 task addLib(type: Copy) {
-    dependsOn jar
-
-    from 'build/libs/'
-    into 'build/docker-compose/grouper/'
+    from jar
+    from (project.configurations.compile - project.configurations.provided)
+    into 'build/docker-compose/daemon/lib/'
 }
 
 task buildContainers(type:Exec) {
@@ -114,4 +139,10 @@ distZip.dependsOn prepDist
 
 clean {
     dependsOn removeContainers
+}
+
+idea {
+    module {
+        scopes.PROVIDED.plus += [configurations.provided]
+    }
 }
