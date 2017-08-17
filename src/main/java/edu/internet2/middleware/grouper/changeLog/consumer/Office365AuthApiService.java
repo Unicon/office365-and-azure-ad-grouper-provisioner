@@ -9,5 +9,11 @@ import retrofit2.http.POST;
 public interface Office365AuthApiService {
     @FormUrlEncoded
     @POST("oauth2/token")
-    Call<OAuthTokenInfo> getOauth2Token(@Field("grant_type") String grantType, @Field("client_id") String clientId, @Field("client_secret") String clientSecret, @Field("resource") String resource);
+    Call<OAuthTokenInfo> getOauth2Token(
+            @Field("grant_type") String grantType,
+            @Field("client_id") String clientId,
+            @Field("client_secret") String clientSecret,
+            @Field("scope") String scope,
+            @Field("resource") String resource
+    );
 }

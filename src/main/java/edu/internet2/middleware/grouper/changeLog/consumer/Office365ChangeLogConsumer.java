@@ -17,8 +17,10 @@ import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import okhttp3.logging.HttpLoggingInterceptor;
 import org.apache.log4j.Logger;
+import retrofit2.Call;
 import retrofit2.Retrofit;
 import retrofit2.converter.moshi.MoshiConverterFactory;
 
@@ -30,10 +32,13 @@ import java.util.*;
  */
 public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     private static final Logger logger = Logger.getLogger(Office365ChangeLogConsumer.class);
+    private static final String CONFIG_PREFIX = "changeLog.consumer.";
 
-    private String token;
+    private String token = null;
     private final String clientId;
     private final String clientSecret;
+    private final String tenantId;
+    private final String scope;
 
     private final Office365GraphApiService service;
 
@@ -42,17 +47,13 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     public Office365ChangeLogConsumer() {
         // TODO: this.getConsumerName() isn't working for some reason. track down
         String name = this.getConsumerName() != null ? this.getConsumerName() : "o365";
-        this.clientId = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired("changeLog.consumer." + name + ".clientId");
-        this.clientSecret = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired("changeLog.consumer." + name + ".clientSecret");
+        this.clientId = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired(CONFIG_PREFIX + name + ".clientId");
+        this.clientSecret = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired(CONFIG_PREFIX + name + ".clientSecret");
+        this.tenantId = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired(CONFIG_PREFIX + name + ".tenantId");
+        this.scope = GrouperLoaderConfig.retrieveConfig().propertyValueString(CONFIG_PREFIX + name + ".scope", "https://graph.microsoft.com/.default");
 
         HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
         loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
-
-        try {
-            this.token = this.getToken();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
 
         OkHttpClient client = new OkHttpClient.Builder()
                 .addInterceptor(new Interceptor() {
@@ -77,13 +78,60 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     }
 
     private String getToken() throws IOException {
+        logger.debug("Token client ID: " + this.clientId);
+        logger.debug("Token tenant ID: " + this.tenantId);
         Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("https://login.microsoftonline.com/MKE197365.onmicrosoft.com/")
+                .baseUrl("https://login.microsoftonline.com/" + this.tenantId + "/")
                 .addConverterFactory(MoshiConverterFactory.create())
                 .build();
         Office365AuthApiService service = retrofit.create(Office365AuthApiService.class);
-        OAuthTokenInfo info = service.getOauth2Token("client_credentials", this.clientId, this.clientSecret, "https://graph.microsoft.com").execute().body();
-        return info.accessToken;
+        retrofit2.Response<OAuthTokenInfo> response = service.getOauth2Token(
+                "client_credentials",
+                this.clientId,
+                this.clientSecret,
+                this.scope,
+                "https://graph.microsoft.com")
+                .execute();
+        if (response.isSuccessful()) {
+            OAuthTokenInfo info = response.body();
+            logger.debug("Token scope: " + info.scope);
+            logger.debug("Token expiresIn: " + info.expiresIn);
+            logger.debug("Token expiresOn: " + info.expiresOn);
+            logger.debug("Token resource: " + info.resource);
+            logger.debug("Token tokenType: " + info.tokenType);
+            logger.debug("Token notBefore: " + info.notBefore);
+            return info.accessToken;
+        } else {
+            ResponseBody errorBody = response.errorBody();
+            throw new IOException("error requesting token (" + response.code() + "): " + errorBody.string());
+        }
+    }
+
+
+    /*
+    This method invokes a retrofit API call with retry.  If the first call returns 401 (unauthorized)
+    the same is retried again after fetching a new token.
+     */
+    private <T> retrofit2.Response<T> invoke(Call<T> call) throws IOException {
+        for (int retryMax = 2; retryMax > 0; retryMax--) {
+            if (token == null) {
+                token = getToken();
+            }
+            retrofit2.Response<T> r = call.execute();
+            if (r.isSuccessful()) {
+                return r;
+            } else if (r.code() == 401) {
+                logger.debug("auth fail, retry: " + call.request().url());
+                // Call objects cannot be reused, so docs say to use clone() to create a new one with the
+                // same specs for retry purposes
+                call = call.clone();
+                // null out existing token so we'll fetch a new one on next loop pass
+                token = null;
+            } else {
+                throw new IOException("Unhandled invoke response (" + r.code() + ") " + r.errorBody().string());
+            }
+        }
+        throw new IOException("Retry failed for: " + call.request().url());
     }
 
     @Override
@@ -111,7 +159,7 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
             "visibility": null
         }
              */
-            retrofit2.Response response = this.service.createGroup(
+            retrofit2.Response response = invoke(this.service.createGroup(
                     new edu.internet2.middleware.grouper.changeLog.consumer.model.Group(
                             null,
                             group.getName(),
@@ -121,12 +169,13 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
                             new ArrayList<String>(),
                             group.getId()
                     )
-            ).execute();
+            ));
+
             AttributeDefName attributeDefName = AttributeDefNameFinder.findByName("etc:attribute:office365:o365Id", false);
             group.getAttributeDelegate().assignAttribute(attributeDefName);
-            group.getAttributeValueDelegate().assignValue("etc:attribute:office365:o365Id", ((edu.internet2.middleware.grouper.changeLog.consumer.model.Group)response.body()).id);
+            group.getAttributeValueDelegate().assignValue("etc:attribute:office365:o365Id", ((edu.internet2.middleware.grouper.changeLog.consumer.model.Group) response.body()).id);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error(e);
         }
     }
 
@@ -144,10 +193,10 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
         try {
             Map options = new TreeMap<>();
             options.put("$filter", "displayName eq '" + pitGroup.getName() + "'");
-            edu.internet2.middleware.grouper.changeLog.consumer.model.Group group = (edu.internet2.middleware.grouper.changeLog.consumer.model.Group) this.service.getGroups(options).execute().body();
-            this.service.deleteGroup(group.id).execute();
+            edu.internet2.middleware.grouper.changeLog.consumer.model.Group group = (edu.internet2.middleware.grouper.changeLog.consumer.model.Group) invoke(this.service.getGroups(options)).body();
+            invoke(this.service.deleteGroup(group.id));
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error(e);
         }
     }
 
@@ -160,7 +209,7 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
         logger.debug("groupId: " + groupId);
 
         try {
-            this.service.addGroupMember(groupId, new OdataIdContainer("https://graph.microsoft.com/v1.0/users/" + subject.getAttributeValue("uid") + "@MKE197365.onmicrosoft.com")).execute();
+            invoke(this.service.addGroupMember(groupId, new OdataIdContainer("https://graph.microsoft.com/v1.0/users/" + subject.getAttributeValue("uid") + "@" + this.tenantId)));
         } catch (IOException e) {
             logger.error(e.getMessage(), e);
         }
@@ -170,11 +219,11 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     protected void removeMembership(Subject subject, Group group, ChangeLogEntry changeLogEntry) {
         logger.debug("removing " + subject + " from " + group);
         try {
-            User user = this.service.getUserByUPN(subject.getAttributeValue("uid") + "@MKE197365.onmicrosoft.com").execute().body();
+            User user = invoke(this.service.getUserByUPN(subject.getAttributeValue("uid") + "@" + this.tenantId)).body();
             String groupId = group.getAttributeValueDelegate().retrieveValueString("etc:attribute:office365:o365Id");
-            this.service.removeGroupMember(groupId, user.id).execute();
+            invoke(this.service.removeGroupMember(groupId, user.id));
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error(e);
         }
     }
 }
