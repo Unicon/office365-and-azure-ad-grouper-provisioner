@@ -58,7 +58,8 @@ task copyDocker(type: Copy) {
     into 'build/docker-compose/'
     filter(ReplaceTokens, tokens: [
             'o365.clientId': project.'o365.clientId',
-            'o365.clientSecret': project.'o365.clientSecret'
+            'o365.clientSecret': project.'o365.clientSecret',
+            'o365.tenantId': project.'o365.tenantId'
     ])
 }
 
