@@ -8,6 +8,7 @@ import edu.internet2.middleware.grouper.attr.AttributeDefName;
 import edu.internet2.middleware.grouper.attr.finder.AttributeDefNameFinder;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogConsumerBaseImpl;
 import edu.internet2.middleware.grouper.changeLog.ChangeLogEntry;
+import edu.internet2.middleware.grouper.changeLog.consumer.model.GroupsOdata;
 import edu.internet2.middleware.grouper.changeLog.consumer.model.OAuthTokenInfo;
 import edu.internet2.middleware.grouper.changeLog.consumer.model.OdataIdContainer;
 import edu.internet2.middleware.grouper.changeLog.consumer.model.User;
@@ -19,6 +20,9 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okhttp3.logging.HttpLoggingInterceptor;
+import org.apache.commons.jexl2.Expression;
+import org.apache.commons.jexl2.JexlEngine;
+import org.apache.commons.jexl2.MapContext;
 import org.apache.log4j.Logger;
 import retrofit2.Call;
 import retrofit2.Retrofit;
@@ -33,16 +37,24 @@ import java.util.*;
 public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     private static final Logger logger = Logger.getLogger(Office365ChangeLogConsumer.class);
     private static final String CONFIG_PREFIX = "changeLog.consumer.";
+    private static final String DEFAULT_ID_ATTRIBUTE = "uid";
 
     private String token = null;
     private final String clientId;
     private final String clientSecret;
     private final String tenantId;
     private final String scope;
+    private final String idAttribute;
+    private final String domain;
+
+    private final String groupJexl;
+    private final String userJexl;
 
     private final Office365GraphApiService service;
 
     private final GrouperSession grouperSession;
+
+    private final JexlEngine jexlEngine = new JexlEngine();
 
     public Office365ChangeLogConsumer() {
         // TODO: this.getConsumerName() isn't working for some reason. track down
@@ -51,6 +63,11 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
         this.clientSecret = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired(CONFIG_PREFIX + name + ".clientSecret");
         this.tenantId = GrouperLoaderConfig.retrieveConfig().propertyValueStringRequired(CONFIG_PREFIX + name + ".tenantId");
         this.scope = GrouperLoaderConfig.retrieveConfig().propertyValueString(CONFIG_PREFIX + name + ".scope", "https://graph.microsoft.com/.default");
+        this.idAttribute = GrouperLoaderConfig.retrieveConfig().propertyValueString(CONFIG_PREFIX + name + ".idAttribute", DEFAULT_ID_ATTRIBUTE);
+        this.domain = GrouperLoaderConfig.retrieveConfig().propertyValueString(CONFIG_PREFIX + name + ".domain", this.tenantId);
+
+        this.groupJexl = GrouperLoaderConfig.retrieveConfig().propertyValueString(CONFIG_PREFIX + name + ".groupJexl");
+        this.userJexl = GrouperLoaderConfig.retrieveConfig().propertyValueString(CONFIG_PREFIX + name + ".groupJexl");
 
         HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
         loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
@@ -134,6 +151,24 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
         throw new IOException("Retry failed for: " + call.request().url());
     }
 
+    private String getJexlGroupName(Object group) {
+        String finalName;
+        if (this.groupJexl == null) {
+            if (group instanceof PITGroup) {
+                finalName = ((PITGroup) group).getName();
+            } else {
+                // assume a Group
+                finalName = ((Group) group).getName();
+            }
+        } else {
+            Expression expression = this.jexlEngine.createExpression(this.groupJexl);
+            MapContext context = new MapContext();
+            context.set("group", group);
+            finalName = (String)expression.evaluate(context);
+        }
+        return finalName;
+    }
+
     @Override
     protected void addGroup(Group group, ChangeLogEntry changeLogEntry) {
         logger.debug("Creating group " + group);
@@ -162,7 +197,7 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
             retrofit2.Response response = invoke(this.service.createGroup(
                     new edu.internet2.middleware.grouper.changeLog.consumer.model.Group(
                             null,
-                            group.getName(),
+                            this.getJexlGroupName(group),
                             false,
                             group.getUuid(),
                             true,
@@ -191,9 +226,11 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     protected void removeDeletedGroup(PITGroup pitGroup, ChangeLogEntry changeLogEntry) {
         logger.debug("removing group " + pitGroup + ": " + pitGroup.getId());
         try {
+            String finalName = this.getJexlGroupName(pitGroup);
             Map options = new TreeMap<>();
-            options.put("$filter", "displayName eq '" + pitGroup.getName() + "'");
-            edu.internet2.middleware.grouper.changeLog.consumer.model.Group group = (edu.internet2.middleware.grouper.changeLog.consumer.model.Group) invoke(this.service.getGroups(options)).body();
+            //TODO: fix this
+            options.put("$filter", "displayName eq '" + finalName + "'");
+            edu.internet2.middleware.grouper.changeLog.consumer.model.Group group = ((GroupsOdata) invoke(this.service.getGroups(options)).body()).groups.get(0);
             invoke(this.service.deleteGroup(group.id));
         } catch (IOException e) {
             logger.error(e);
@@ -209,7 +246,7 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
         logger.debug("groupId: " + groupId);
 
         try {
-            invoke(this.service.addGroupMember(groupId, new OdataIdContainer("https://graph.microsoft.com/v1.0/users/" + subject.getAttributeValue("uid") + "@" + this.tenantId)));
+            invoke(this.service.addGroupMember(groupId, new OdataIdContainer("https://graph.microsoft.com/v1.0/users/" + subject.getAttributeValue(this.idAttribute) + "@" + this.domain)));
         } catch (IOException e) {
             logger.error(e.getMessage(), e);
         }
@@ -219,7 +256,7 @@ public class Office365ChangeLogConsumer extends ChangeLogConsumerBaseImpl {
     protected void removeMembership(Subject subject, Group group, ChangeLogEntry changeLogEntry) {
         logger.debug("removing " + subject + " from " + group);
         try {
-            User user = invoke(this.service.getUserByUPN(subject.getAttributeValue("uid") + "@" + this.tenantId)).body();
+            User user = invoke(this.service.getUserByUPN(subject.getAttributeValue(this.idAttribute) + "@" + this.domain)).body();
             String groupId = group.getAttributeValueDelegate().retrieveValueString("etc:attribute:office365:o365Id");
             invoke(this.service.removeGroupMember(groupId, user.id));
         } catch (IOException e) {
